@@ -18,12 +18,13 @@ const mapDatePreset = (preset: string): string => {
     'maximum': 'maximum',
     'today': 'today',
     'yesterday': 'yesterday',
+    'today_and_yesterday': 'last_3d',
     'last_7d': 'last_7d',
     'last_14d': 'last_14d',
     'last_28d': 'last_28d',
     'last_30d': 'last_30d',
-    'this_week': 'this_week',
-    'last_week': 'last_week',
+    'this_week': 'this_week_mon_today',
+    'last_week': 'last_week_mon_sun',
     'this_month': 'this_month',
     'last_month': 'last_month'
   };
@@ -145,7 +146,7 @@ export const syncMetaAdsData = async (client: Client, datePreset: string = 'this
         endTime: fbCamp.stop_time || null,
         adSets,
         creative: adSets[0]?.ads[0]?.creative || { id: '0', type: 'image', url: '', headline: fbCamp.name },
-        audience: 'Segmentação Meta'
+        audience: adSets[0]?.name || 'Público Geral' // Usando o nome do primeiro conjunto como fallback de audiência
       };
     }));
     return { ...client, lastSync: new Date().toLocaleTimeString(), campaigns };
