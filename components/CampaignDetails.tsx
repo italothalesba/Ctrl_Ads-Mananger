@@ -122,10 +122,10 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
                 </div>
               </div>
 
-              <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm">
+              <div className="bg-white p-6 md:p-8 rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
                 <h3 className="font-black text-slate-900 text-base uppercase tracking-tight mb-8">Público por Gênero e Idade</h3>
                 {demographicChartData ? (
-                  <div className="h-[300px] w-full">
+                  <div className="h-[300px] w-full min-w-0 relative">
                     <ResponsiveContainer width="100%" height="100%">
                       <ReBarChart data={demographicChartData}>
                         <CartesianGrid vertical={false} stroke="#f1f5f9" />

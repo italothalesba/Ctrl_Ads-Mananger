@@ -1,11 +1,7 @@
 
-import { initializeApp } from "firebase/app";
+import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
-/**
- * Configurações oficiais do Firebase AdsManager Pro
- * Integrado com Firestore para persistência de clientes e métricas.
- */
 const firebaseConfig = {
   apiKey: "AIzaSyC3B_4kVLCjj1hi6OKIogiKa9tvnbVYEjk",
   authDomain: "ads-manager-5961a.firebaseapp.com",
@@ -16,5 +12,8 @@ const firebaseConfig = {
   measurementId: "G-WH3VTT2QYG"
 };
 
-const app = initializeApp(firebaseConfig);
+// Singleton para inicialização do App
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+
+// Exporta a instância do banco de dados
 export const db = getFirestore(app);

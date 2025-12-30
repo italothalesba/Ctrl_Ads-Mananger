@@ -36,16 +36,21 @@ const mapInsightsToMetrics = (insightsData: any): Metrics => {
   const messages = getActionValue(actions, 'onsite_conversion.messaging_first_reply');
   const spend = parseFloat(insights.spend || 0);
 
-  const video: VideoMetrics = {
-    plays: getActionValue(actions, 'video_play'),
-    avgTime: parseFloat(insights.video_avg_time_watched_actions?.[0]?.value || 0),
-    retention25: getActionValue(actions, 'video_p25_watched_actions'),
-    retention50: getActionValue(actions, 'video_p50_watched_actions'),
-    retention75: getActionValue(actions, 'video_p75_watched_actions'),
-    retention100: getActionValue(actions, 'video_p100_watched_actions'),
-  };
+  const videoPlays = getActionValue(actions, 'video_play');
+  let video: VideoMetrics | undefined = undefined;
 
-  return {
+  if (videoPlays > 0) {
+    video = {
+      plays: videoPlays,
+      avgTime: parseFloat(insights.video_avg_time_watched_actions?.[0]?.value || 0),
+      retention25: getActionValue(actions, 'video_p25_watched_actions'),
+      retention50: getActionValue(actions, 'video_p50_watched_actions'),
+      retention75: getActionValue(actions, 'video_p75_watched_actions'),
+      retention100: getActionValue(actions, 'video_p100_watched_actions'),
+    };
+  }
+
+  const metrics: Metrics = {
     spend,
     impressions: parseInt(insights.impressions || 0),
     reach: parseInt(insights.reach || 0),
@@ -54,10 +59,18 @@ const mapInsightsToMetrics = (insightsData: any): Metrics => {
     clicks: parseInt(insights.clicks || 0),
     conversions: getActionValue(actions, 'purchase'),
     conversionValue: getActionValue(insights.action_values, 'purchase'),
-    messages,
-    costPerMessage: messages > 0 ? spend / messages : 0,
-    video: video.plays > 0 ? video : undefined
   };
+
+  if (messages > 0) {
+    metrics.messages = messages;
+    metrics.costPerMessage = spend / messages;
+  }
+
+  if (video) {
+    metrics.video = video;
+  }
+
+  return metrics;
 };
 
 export const validateMetaConnection = async (adAccountId: string, accessToken: string): Promise<MetaAccountInfo> => {
@@ -114,7 +127,7 @@ export const syncMetaAdsData = async (client: Client, datePreset: string = 'this
           status: fbAdSet.status === 'ACTIVE' ? 'active' : 'paused',
           budget: parseFloat(fbAdSet.daily_budget || fbAdSet.lifetime_budget || 0) / 100,
           budgetType: fbAdSet.daily_budget ? 'DAILY' : 'LIFETIME',
-          audience: JSON.stringify(fbAdSet.targeting),
+          audience: JSON.stringify(fbAdSet.targeting || {}),
           metrics: mapInsightsToMetrics(fbAdSet.insights),
           ads
         };
@@ -128,10 +141,10 @@ export const syncMetaAdsData = async (client: Client, datePreset: string = 'this
         metrics: campMetrics,
         budget: parseFloat(fbCamp.daily_budget || fbCamp.lifetime_budget || 0) / 100,
         budgetType: fbCamp.daily_budget ? 'DAILY' : 'LIFETIME',
-        startTime: fbCamp.start_time,
-        endTime: fbCamp.stop_time,
+        startTime: fbCamp.start_time || null,
+        endTime: fbCamp.stop_time || null,
         adSets,
-        creative: adSets[0]?.ads[0]?.creative || { id: '0', type: 'image', url: '', headline: '' },
+        creative: adSets[0]?.ads[0]?.creative || { id: '0', type: 'image', url: '', headline: fbCamp.name },
         audience: 'Segmentação Meta'
       };
     }));
