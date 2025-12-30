@@ -1,16 +1,16 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { MOCK_CLIENTS } from './constants';
-import { Sidebar } from './components/Sidebar';
-import { StatCard } from './components/StatCard';
-import { CampaignDetails } from './components/CampaignDetails';
-import { SettingsModal } from './components/SettingsModal';
-import { DateRangePicker, DatePreset } from './components/DateRangePicker';
-import { Login } from './components/Login';
-import { Client, Campaign } from './types';
+import { MOCK_CLIENTS } from './constants.ts';
+import { Sidebar } from './components/Sidebar.tsx';
+import { StatCard } from './components/StatCard.tsx';
+import { CampaignDetails } from './components/CampaignDetails.tsx';
+import { SettingsModal } from './components/SettingsModal.tsx';
+import { DateRangePicker, DatePreset } from './components/DateRangePicker.tsx';
+import { Login } from './components/Login.tsx';
+import { Client, Campaign } from './types.ts';
 import { Search, Filter, Calendar, BarChart2, DollarSign, MousePointer, ShoppingBag, Eye, Target, RefreshCw, AlertTriangle, Menu, TrendingUp, Loader2, LogOut } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { syncMetaAdsData, MetaAccountInfo } from './services/metaService';
+import { syncMetaAdsData, MetaAccountInfo } from './services/metaService.ts';
 
 function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
@@ -29,7 +29,6 @@ function App() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Verificação de autenticação na memória (localStorage)
   useEffect(() => {
     const savedAuth = localStorage.getItem('ads_manager_auth');
     if (savedAuth) {
@@ -75,10 +74,10 @@ function App() {
     const isMax = datePreset === 'maximum';
     const multiplier = isMax ? 2.5 : 1;
     return [
-      { name: 'Ponto 1', spend: (clientMetrics.spend * 0.1) * multiplier, revenue: (clientMetrics.revenue * 0.08) * multiplier },
-      { name: 'Ponto 2', spend: (clientMetrics.spend * 0.3) * multiplier, revenue: (clientMetrics.revenue * 0.25) * multiplier },
-      { name: 'Ponto 3', spend: (clientMetrics.spend * 0.6) * multiplier, revenue: (clientMetrics.revenue * 0.55) * multiplier },
-      { name: 'Ponto 4', spend: (clientMetrics.spend * 1.0) * multiplier, revenue: (clientMetrics.revenue * 1.0) * multiplier },
+      { name: 'S1', spend: (clientMetrics.spend * 0.1) * multiplier, revenue: (clientMetrics.revenue * 0.08) * multiplier },
+      { name: 'S2', spend: (clientMetrics.spend * 0.3) * multiplier, revenue: (clientMetrics.revenue * 0.25) * multiplier },
+      { name: 'S3', spend: (clientMetrics.spend * 0.6) * multiplier, revenue: (clientMetrics.revenue * 0.55) * multiplier },
+      { name: 'S4', spend: (clientMetrics.spend * 1.0) * multiplier, revenue: (clientMetrics.revenue * 1.0) * multiplier },
     ];
   }, [clientMetrics, datePreset]);
 
@@ -96,7 +95,7 @@ function App() {
           prevClients.map(c => c.id === updatedClient.id ? updatedClient : c)
         );
       } else {
-        await new Promise(resolve => setTimeout(resolve, 1200));
+        await new Promise(resolve => setTimeout(resolve, 1000));
         if (targetPreset === 'maximum') {
           setClients(prevClients => prevClients.map(c => {
             if (c.id !== selectedClientId) return c;
@@ -151,7 +150,7 @@ function App() {
           name: accountInfo.name,
           adAccountId: officialId,
           accessToken: accessToken,
-          lastSync: 'Configuração Atualizada'
+          lastSync: 'Atualizado'
         };
         setSelectedClientId(updatedClients[existingClientIndex].id);
         return updatedClients;
@@ -163,7 +162,7 @@ function App() {
           avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(accountInfo.name)}&background=random`,
           adAccountId: officialId,
           accessToken: accessToken,
-          lastSync: 'Aguardando Sinc.',
+          lastSync: 'Conectado',
           campaigns: []
         };
         setSelectedClientId(newClient.id);
@@ -213,11 +212,9 @@ function App() {
       <main className="flex-1 w-full lg:ml-64 transition-all duration-300 overflow-x-hidden relative">
         {isSyncing && (
           <div className="absolute inset-0 bg-white/40 backdrop-blur-[2px] z-20 flex items-center justify-center">
-            <div className="bg-white p-6 rounded-3xl shadow-2xl border border-slate-100 flex flex-col items-center gap-4 animate-fade-in-up">
-               <div className="relative">
-                 <RefreshCw className="w-10 h-10 text-indigo-600 animate-spin" />
-               </div>
-               <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Sincronizando: {datePreset.replace('_', ' ')}</p>
+            <div className="bg-white p-6 rounded-3xl shadow-2xl border border-slate-100 flex flex-col items-center gap-4 animate-fade-in">
+               <RefreshCw className="w-10 h-10 text-indigo-600 animate-spin" />
+               <p className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Atualizando Dados...</p>
             </div>
           </div>
         )}
@@ -227,8 +224,7 @@ function App() {
              <Menu className="w-6 h-6 text-slate-600" />
           </button>
           <div className="flex flex-col items-center">
-             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admin</span>
-             <h4 className="text-xs font-black text-indigo-600 truncate max-w-[150px]">{userEmail}</h4>
+             <h4 className="text-xs font-black text-indigo-600 truncate max-w-[150px]">{selectedClient.name}</h4>
           </div>
           <button onClick={handleLogout} className="p-2 text-rose-500">
              <LogOut className="w-5 h-5" />
@@ -240,14 +236,9 @@ function App() {
             <div>
               <div className="flex items-center gap-3">
                  <h1 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">Painel de Tráfego</h1>
-                 {userEmail && (
-                   <span className="hidden md:flex items-center text-[10px] font-black text-indigo-600 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100 uppercase">
-                     {userEmail}
-                   </span>
-                 )}
               </div>
               <p className="text-xs md:text-sm text-slate-500 font-medium mt-1">
-                Analisando <span className="font-bold text-indigo-600">{selectedClient.name}</span> • <span className="text-slate-400">Visto em: {selectedClient.lastSync}</span>
+                Cliente: <span className="font-bold text-indigo-600">{selectedClient.name}</span> • <span className="text-slate-400">{selectedClient.lastSync}</span>
               </p>
             </div>
             
@@ -258,7 +249,7 @@ function App() {
                 className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-indigo-600 text-white px-4 py-2.5 rounded-xl text-xs font-black uppercase shadow-lg shadow-indigo-100 active:scale-95 transition-all disabled:bg-slate-400"
               >
                 <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                {isSyncing ? 'Sincronizando' : 'Sincronizar'}
+                Sync
               </button>
               <DateRangePicker 
                 selected={datePreset} 
@@ -277,7 +268,7 @@ function App() {
           <div className="bg-white p-4 md:p-8 rounded-[32px] border border-slate-200 shadow-sm overflow-hidden">
             <div className="flex justify-between items-center mb-8">
               <h3 className="font-black text-slate-900 uppercase tracking-widest text-xs flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-indigo-600" /> Curva de Performance ({datePreset.replace('_', ' ')})
+                <TrendingUp className="w-4 h-4 text-indigo-600" /> Performance ({datePreset})
               </h3>
             </div>
             <div className="h-[250px] md:h-[350px] w-full">
@@ -301,11 +292,11 @@ function App() {
 
           <div className="space-y-6">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">Campanhas no Período</h2>
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">Campanhas</h2>
               <div className="relative w-full md:w-72">
                  <input 
                   type="text" 
-                  placeholder="Filtrar campanha..." 
+                  placeholder="Pesquisar..." 
                   className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
                  />
                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -314,7 +305,7 @@ function App() {
 
             {selectedClient.campaigns.length === 0 ? (
               <div className="bg-white rounded-3xl p-12 text-center border-2 border-slate-100 border-dashed">
-                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Sem campanhas para este período.</p>
+                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest">Nenhuma campanha encontrada.</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 md:gap-6">

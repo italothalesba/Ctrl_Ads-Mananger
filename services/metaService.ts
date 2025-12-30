@@ -1,5 +1,5 @@
 
-import { Client, Campaign, AdSet, Ad, Metrics, Creative, DemographicData, VideoMetrics } from "../types";
+import { Client, Campaign, AdSet, Ad, Metrics, DemographicData, VideoMetrics } from "../types.ts";
 
 export interface MetaAccountInfo {
   id: string;
@@ -13,13 +13,11 @@ const getActionValue = (actions: any[], actionType: string): number => {
   return action ? parseFloat(action.value || action.count || 0) : 0;
 };
 
-// Mapeia os presets do nosso app para os presets da API da Meta
 const mapDatePreset = (preset: string): string => {
   const mapping: Record<string, string> = {
     'maximum': 'maximum',
     'today': 'today',
     'yesterday': 'yesterday',
-    'today_and_yesterday': 'today', // Meta não tem esse exato, usamos today como base ou custom (simplificando aqui)
     'last_7d': 'last_7d',
     'last_14d': 'last_14d',
     'last_28d': 'last_28d',
@@ -27,8 +25,7 @@ const mapDatePreset = (preset: string): string => {
     'this_week': 'this_week',
     'last_week': 'last_week',
     'this_month': 'this_month',
-    'last_month': 'last_month',
-    'custom': 'maximum' // Default para custom se não implementado
+    'last_month': 'last_month'
   };
   return mapping[preset] || 'this_month';
 };
@@ -36,7 +33,6 @@ const mapDatePreset = (preset: string): string => {
 const mapInsightsToMetrics = (insightsData: any): Metrics => {
   const insights = insightsData?.data?.[0] || {};
   const actions = insights.actions || [];
-  
   const messages = getActionValue(actions, 'onsite_conversion.messaging_first_reply');
   const spend = parseFloat(insights.spend || 0);
 
@@ -75,18 +71,14 @@ export const validateMetaConnection = async (adAccountId: string, accessToken: s
 
 export const syncMetaAdsData = async (client: Client, datePreset: string = 'this_month'): Promise<Client> => {
   if (!client.adAccountId || !client.accessToken) throw new Error("Credenciais ausentes.");
-  
   const metaPreset = mapDatePreset(datePreset);
   const accountId = client.adAccountId.startsWith('act_') ? client.adAccountId : `act_${client.adAccountId}`;
   const token = client.accessToken;
-
-  // Garantimos que o date_preset seja passado para as sub-consultas de insights
   const insightsFields = `spend,impressions,reach,frequency,cpm,clicks,actions,action_values,video_avg_time_watched_actions`;
   const insightsParams = `.date_preset(${metaPreset})`;
   
   try {
     const url = `https://graph.facebook.com/v19.0/${accountId}/campaigns?fields=id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time,insights${insightsParams}{${insightsFields}},adsets{id,name,status,daily_budget,lifetime_budget,targeting,insights${insightsParams}{${insightsFields}},ads{id,name,status,creative{id,title,image_url,thumbnail_url},insights${insightsParams}{${insightsFields}}}}&date_preset=${metaPreset}&access_token=${token}`;
-    
     const response = await fetch(url);
     const json = await response.json();
     if (json.error) throw new Error(json.error.message);
@@ -95,7 +87,6 @@ export const syncMetaAdsData = async (client: Client, datePreset: string = 'this
       const demoUrl = `https://graph.facebook.com/v19.0/${fbCamp.id}/insights?breakdowns=age,gender&fields=spend,actions&date_preset=${metaPreset}&access_token=${token}`;
       const demoRes = await fetch(demoUrl);
       const demoJson = await demoRes.json();
-      
       const demographics: DemographicData[] = (demoJson.data || []).map((d: any) => ({
         age: d.age,
         gender: d.gender,
@@ -104,7 +95,6 @@ export const syncMetaAdsData = async (client: Client, datePreset: string = 'this
       }));
 
       const campMetrics = { ...mapInsightsToMetrics(fbCamp.insights), demographics };
-      
       const adSets: AdSet[] = (fbCamp.adsets?.data || []).map((fbAdSet: any) => {
         const ads: Ad[] = (fbAdSet.ads?.data || []).map((fbAd: any) => ({
           id: fbAd.id,
@@ -118,7 +108,6 @@ export const syncMetaAdsData = async (client: Client, datePreset: string = 'this
           },
           metrics: mapInsightsToMetrics(fbAd.insights)
         }));
-
         return {
           id: fbAdSet.id,
           name: fbAdSet.name,
@@ -130,7 +119,6 @@ export const syncMetaAdsData = async (client: Client, datePreset: string = 'this
           ads
         };
       });
-
       return {
         id: fbCamp.id,
         name: fbCamp.name,
@@ -144,10 +132,9 @@ export const syncMetaAdsData = async (client: Client, datePreset: string = 'this
         endTime: fbCamp.stop_time,
         adSets,
         creative: adSets[0]?.ads[0]?.creative || { id: '0', type: 'image', url: '', headline: '' },
-        audience: 'Múltiplos Públicos'
+        audience: 'Segmentação Meta'
       };
     }));
-
     return { ...client, lastSync: new Date().toLocaleTimeString(), campaigns };
   } catch (e: any) {
     throw e;

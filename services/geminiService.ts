@@ -1,8 +1,7 @@
 
 import { GoogleGenAI } from "@google/genai";
-import { Campaign } from "../types";
+import { Campaign } from "../types.ts";
 
-// Function to analyze campaign performance and generate strategic suggestions using Gemini AI
 export const analyzeCampaignPerformance = async (campaign: Campaign): Promise<string> => {
   const { name, metrics, audience, creative, objective } = campaign;
   
@@ -34,16 +33,11 @@ export const analyzeCampaignPerformance = async (campaign: Campaign): Promise<st
   `;
 
   try {
-    // Correctly initialize GoogleGenAI inside the function using process.env.API_KEY directly
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    
-    // Using gemini-3-flash-preview for basic text analysis tasks
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
     });
-    
-    // Access the .text property directly from the GenerateContentResponse object (it is a property, not a method)
     return response.text || "Não foi possível gerar análise.";
   } catch (error) {
     console.error("Gemini API Error:", error);
