@@ -1,5 +1,5 @@
 
-import { Client, Campaign, AdSet, Ad, Metrics, DemographicData, VideoMetrics } from "../types.ts";
+import { Client, Campaign, AdSet, Ad, Metrics, DemographicData, VideoMetrics, DailyStat } from "../types.ts";
 
 export interface MetaAccountInfo {
   id: string;
@@ -31,25 +31,20 @@ const mapDatePreset = (preset: string): string => {
   return mapping[preset] || 'this_month';
 };
 
-const mapInsightsToMetrics = (insightsData: any): Metrics => {
-  const insights = insightsData?.data?.[0] || {};
+const mapInsightsToMetrics = (insightsData: any, objective: string = ''): Metrics => {
+  const insights = insightsData?.data?.[0] || insightsData || {};
   const actions = insights.actions || [];
-  const messages = getActionValue(actions, 'onsite_conversion.messaging_first_reply');
+  const actionValues = insights.action_values || [];
   const spend = parseFloat(insights.spend || 0);
 
-  const videoPlays = getActionValue(actions, 'video_play');
-  let video: VideoMetrics | undefined = undefined;
+  let mainActionType = 'purchase';
+  if (objective.includes('MESSAGES')) mainActionType = 'onsite_conversion.messaging_first_reply';
+  else if (objective.includes('LEAD')) mainActionType = 'lead';
+  else if (objective.includes('OUTCOME_TRAFFIC')) mainActionType = 'link_click';
 
-  if (videoPlays > 0) {
-    video = {
-      plays: videoPlays,
-      avgTime: parseFloat(insights.video_avg_time_watched_actions?.[0]?.value || 0),
-      retention25: getActionValue(actions, 'video_p25_watched_actions'),
-      retention50: getActionValue(actions, 'video_p50_watched_actions'),
-      retention75: getActionValue(actions, 'video_p75_watched_actions'),
-      retention100: getActionValue(actions, 'video_p100_watched_actions'),
-    };
-  }
+  const conversions = getActionValue(actions, mainActionType);
+  const conversionValue = getActionValue(actionValues, mainActionType);
+  const messages = getActionValue(actions, 'onsite_conversion.messaging_first_reply');
 
   const metrics: Metrics = {
     spend,
@@ -58,17 +53,13 @@ const mapInsightsToMetrics = (insightsData: any): Metrics => {
     frequency: parseFloat(insights.frequency || 0),
     cpm: parseFloat(insights.cpm || 0),
     clicks: parseInt(insights.clicks || 0),
-    conversions: getActionValue(actions, 'purchase'),
-    conversionValue: getActionValue(insights.action_values, 'purchase'),
+    conversions,
+    conversionValue,
   };
 
-  if (messages > 0) {
-    metrics.messages = messages;
-    metrics.costPerMessage = spend / messages;
-  }
-
-  if (video) {
-    metrics.video = video;
+  if (messages > 0 || mainActionType.includes('messaging')) {
+    metrics.messages = messages || conversions;
+    metrics.costPerMessage = spend / (metrics.messages || 1);
   }
 
   return metrics;
@@ -92,38 +83,51 @@ export const syncMetaAdsData = async (
   
   const accountId = client.adAccountId.startsWith('act_') ? client.adAccountId : `act_${client.adAccountId}`;
   const token = client.accessToken;
-  const insightsFields = `spend,impressions,reach,frequency,cpm,clicks,actions,action_values,video_avg_time_watched_actions`;
+  const insightsFields = `spend,impressions,reach,frequency,cpm,clicks,actions,action_values`;
+  const preset = mapDatePreset(datePreset);
   
-  // Define o seletor de data (Preset ou Range Personalizado)
   let dateQuery = '';
   if (datePreset === 'custom' && customRange) {
     const range = JSON.stringify({ since: customRange.since, until: customRange.until });
     dateQuery = `time_range=${range}`;
   } else {
-    dateQuery = `date_preset=${mapDatePreset(datePreset)}`;
+    dateQuery = `date_preset=${preset}`;
   }
 
-  const insightsParams = `.${dateQuery.replace('=', '(').replace(/$/, ')')}`;
-  
   try {
-    const url = `https://graph.facebook.com/v19.0/${accountId}/campaigns?fields=id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time,insights${insightsParams}{${insightsFields}},adsets{id,name,status,daily_budget,lifetime_budget,targeting,insights${insightsParams}{${insightsFields}},ads{id,name,status,creative{id,title,image_url,thumbnail_url},insights${insightsParams}{${insightsFields}}}}&${dateQuery}&access_token=${token}`;
+    // A estrutura da query foi corrigida para usar expansão aninhada padrão da Graph API
+    const fields = [
+      'id',
+      'name',
+      'status',
+      'objective',
+      'daily_budget',
+      'lifetime_budget',
+      `insights.date_preset(${preset}){${insightsFields}}`,
+      `adsets{id,name,status,daily_budget,targeting,insights.date_preset(${preset}){${insightsFields}},ads{id,name,status,creative{id,title,image_url,thumbnail_url},insights.date_preset(${preset}){${insightsFields}}}}`
+    ].join(',');
+
+    const campUrl = `https://graph.facebook.com/v19.0/${accountId}/campaigns?fields=${fields}&access_token=${token}`;
     
-    const response = await fetch(url);
-    const json = await response.json();
-    if (json.error) throw new Error(json.error.message);
+    const campResponse = await fetch(campUrl);
+    const campJson = await campResponse.json();
+    if (campJson.error) throw new Error(campJson.error.message);
 
-    const campaigns: Campaign[] = await Promise.all(json.data.map(async (fbCamp: any) => {
-      const demoUrl = `https://graph.facebook.com/v19.0/${fbCamp.id}/insights?breakdowns=age,gender&fields=spend,actions&${dateQuery}&access_token=${token}`;
-      const demoRes = await fetch(demoUrl);
-      const demoJson = await demoRes.json();
-      const demographics: DemographicData[] = (demoJson.data || []).map((d: any) => ({
-        age: d.age,
-        gender: d.gender,
-        spend: parseFloat(d.spend || 0),
-        results: getActionValue(d.actions, fbCamp.objective === 'MESSAGES' ? 'onsite_conversion.messaging_first_reply' : 'purchase')
-      }));
+    // 2. Buscar Histórico Diário da Conta (Para o Gráfico)
+    const historyUrl = `https://graph.facebook.com/v19.0/${accountId}/insights?fields=spend,action_values,date_start&time_increment=1&${dateQuery}&access_token=${token}`;
+    const historyResponse = await fetch(historyUrl);
+    const historyJson = await historyResponse.json();
+    
+    const dailyStats: DailyStat[] = (historyJson.data || []).map((day: any) => ({
+      date: day.date_start,
+      spend: parseFloat(day.spend || 0),
+      revenue: getActionValue(day.action_values, 'purchase') || getActionValue(day.action_values, 'lead') || 0
+    })).sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
-      const campMetrics = { ...mapInsightsToMetrics(fbCamp.insights), demographics };
+    const campaigns: Campaign[] = campJson.data.map((fbCamp: any) => {
+      const campObjective = fbCamp.objective || '';
+      const campMetrics = mapInsightsToMetrics(fbCamp.insights, campObjective);
+      
       const adSets: AdSet[] = (fbCamp.adsets?.data || []).map((fbAdSet: any) => {
         const ads: Ad[] = (fbAdSet.ads?.data || []).map((fbAd: any) => ({
           id: fbAd.id,
@@ -135,36 +139,34 @@ export const syncMetaAdsData = async (
             url: fbAd.creative?.image_url || fbAd.creative?.thumbnail_url || 'https://via.placeholder.com/150',
             headline: fbAd.creative?.title || fbAd.name
           },
-          metrics: mapInsightsToMetrics(fbAd.insights)
+          metrics: mapInsightsToMetrics(fbAd.insights, campObjective)
         }));
         return {
           id: fbAdSet.id,
           name: fbAdSet.name,
           status: fbAdSet.status === 'ACTIVE' ? 'active' : 'paused',
-          budget: parseFloat(fbAdSet.daily_budget || fbAdSet.lifetime_budget || 0) / 100,
-          budgetType: fbAdSet.daily_budget ? 'DAILY' : 'LIFETIME',
+          budget: parseFloat(fbAdSet.daily_budget || 0) / 100,
+          budgetType: 'DAILY',
           audience: JSON.stringify(fbAdSet.targeting || {}),
-          metrics: mapInsightsToMetrics(fbAdSet.insights),
+          metrics: mapInsightsToMetrics(fbAdSet.insights, campObjective),
           ads
         };
       });
+
       return {
         id: fbCamp.id,
         name: fbCamp.name,
         status: fbCamp.status === 'ACTIVE' ? 'active' : 'paused',
         platform: 'facebook',
-        objective: fbCamp.objective,
+        objective: campObjective,
         metrics: campMetrics,
-        budget: parseFloat(fbCamp.daily_budget || fbCamp.lifetime_budget || 0) / 100,
-        budgetType: fbCamp.daily_budget ? 'DAILY' : 'LIFETIME',
-        startTime: fbCamp.start_time || null,
-        endTime: fbCamp.stop_time || null,
         adSets,
         creative: adSets[0]?.ads[0]?.creative || { id: '0', type: 'image', url: '', headline: fbCamp.name },
         audience: adSets[0]?.name || 'Público Geral'
       };
-    }));
-    return { ...client, lastSync: new Date().toLocaleTimeString(), campaigns };
+    });
+
+    return { ...client, lastSync: new Date().toLocaleTimeString(), campaigns, dailyStats };
   } catch (e: any) {
     throw e;
   }

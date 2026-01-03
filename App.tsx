@@ -3,12 +3,13 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { Sidebar } from './components/Sidebar.tsx';
 import { StatCard } from './components/StatCard.tsx';
 import { CampaignDetails } from './components/CampaignDetails.tsx';
+import { CreativePreviewModal } from './components/CreativePreviewModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { AccessManagementModal } from './components/AccessManagementModal.tsx';
 import { DateRangePicker, DatePreset } from './components/DateRangePicker.tsx';
 import { Login } from './components/Login.tsx';
 import { Client, Campaign } from './types.ts';
-import { Menu, Search, BarChart2, DollarSign, MousePointer, ShoppingBag, RefreshCw, TrendingUp, Loader2, PlusCircle, Database, AlertCircle, WifiOff, Clock, Target, Users } from 'lucide-react';
+import { Menu, Search, BarChart2, DollarSign, MousePointer, ShoppingBag, RefreshCw, TrendingUp, Loader2, PlusCircle, Database, AlertCircle, WifiOff, Clock, Target, Users, HelpCircle } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { syncMetaAdsData, MetaAccountInfo } from './services/metaService.ts';
 import { db } from './firebase.ts';
@@ -41,6 +42,7 @@ function App() {
   const clientsRef = useRef<Client[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
+  const [previewCampaign, setPreviewCampaign] = useState<Campaign | null>(null);
   
   const [datePreset, setDatePreset] = useState<DatePreset>('this_month');
   const [customRange, setCustomRange] = useState<{ since: string; until: string } | undefined>(undefined);
@@ -85,7 +87,6 @@ function App() {
         
         setClients(clientsData);
         
-        // Se for cliente, travar o ID. Se for admin, manter lógica normal.
         if (session.role === 'client' && session.clientId) {
           setSelectedClientId(session.clientId);
         } else {
@@ -180,12 +181,18 @@ function App() {
   const roas = clientMetrics.spend > 0 ? (clientMetrics.revenue / clientMetrics.spend).toFixed(2) : '0.00';
 
   const chartData = useMemo(() => {
-    return [
-      { name: 'Jan', spend: (clientMetrics.spend * 0.2), revenue: (clientMetrics.revenue * 0.15) },
-      { name: 'Fev', spend: (clientMetrics.spend * 0.5), revenue: (clientMetrics.revenue * 0.45) },
-      { name: 'Mar', spend: (clientMetrics.spend * 1.0), revenue: (clientMetrics.revenue * 1.0) },
-    ];
-  }, [clientMetrics]);
+    if (!selectedClient?.dailyStats || selectedClient.dailyStats.length === 0) {
+      return [{ name: 'Sem dados', spend: 0, revenue: 0 }];
+    }
+    return selectedClient.dailyStats.map(stat => {
+      const dateObj = new Date(stat.date);
+      return {
+        name: `${dateObj.getDate()}/${dateObj.getMonth() + 1}`,
+        spend: stat.spend,
+        revenue: stat.revenue
+      };
+    });
+  }, [selectedClient]);
 
   const handleSaveAccount = async (data: { adAccountId: string; accessToken: string; accountInfo: MetaAccountInfo }) => {
     const { accountInfo, accessToken } = data;
@@ -223,6 +230,18 @@ function App() {
     } catch (e) {
       console.error("Erro ao deletar:", e);
     }
+  };
+
+  const handleOpenDetails = (campaign: Campaign) => {
+    setSelectedCampaign(campaign);
+    setPreviewCampaign(null); // Fecha o preview ao abrir detalhes
+  };
+
+  const getObjectiveLabel = (objective: string) => {
+    if (objective.includes('MESSAGES')) return 'Conversas';
+    if (objective.includes('LEAD')) return 'Leads';
+    if (objective.includes('OUTCOME_TRAFFIC')) return 'Cliques';
+    return 'Vendas';
   };
 
   if (isAuthChecking) {
@@ -321,10 +340,33 @@ function App() {
             </header>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-              <StatCard label="Total Gasto" value={`R$ ${clientMetrics.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} trend={12} icon={<DollarSign />} />
-              <StatCard label="ROAS Médio" value={`${roas}x`} trend={8} icon={<BarChart2 />} />
-              <StatCard label="Conversões" value={clientMetrics.conversions.toString()} trend={15} icon={<ShoppingBag />} />
-              <StatCard label="Cliques Únicos" value={clientMetrics.clicks.toLocaleString('pt-BR')} icon={<MousePointer />} />
+              <StatCard 
+                label="Total Gasto" 
+                value={`R$ ${clientMetrics.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} 
+                trend={12} 
+                icon={<DollarSign />} 
+                description="Valor total investido no período selecionado."
+              />
+              <StatCard 
+                label="ROAS Global" 
+                value={`${roas}x`} 
+                trend={8} 
+                icon={<BarChart2 />} 
+                description="Retorno sobre investimento. Calculado como: Valor de Conversão / Valor Gasto. Se estiver zerado, verifique se o Pixel está enviando o 'Valor da Conversão'."
+              />
+              <StatCard 
+                label="Resultados Totais" 
+                value={clientMetrics.conversions.toString()} 
+                trend={15} 
+                icon={<ShoppingBag />} 
+                description="Soma de conversões de todas as campanhas. Identificamos automaticamente se o resultado é Compra, Lead ou Mensagem baseado no objetivo de cada uma."
+              />
+              <StatCard 
+                label="Cliques Únicos" 
+                value={clientMetrics.clicks.toLocaleString('pt-BR')} 
+                icon={<MousePointer />} 
+                description="Quantidade de pessoas únicas que clicaram no seu anúncio."
+              />
             </div>
 
             <div className="bg-white p-6 md:p-8 rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
@@ -332,12 +374,16 @@ function App() {
                 <TrendingUp className="w-4 h-4 text-indigo-600" /> Histórico de Performance
               </h3>
               <div className="h-[300px] w-full min-w-0 relative">
-                <ResponsiveContainer width="100%" height="100%">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                   <AreaChart data={chartData}>
                     <defs>
                       <linearGradient id="colorSpend" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.15}/>
                         <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
@@ -345,6 +391,7 @@ function App() {
                     <YAxis hide />
                     <Tooltip contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}} />
                     <Area type="monotone" dataKey="spend" stroke="#4f46e5" fill="url(#colorSpend)" strokeWidth={4} name="Gasto" />
+                    <Area type="monotone" dataKey="revenue" stroke="#10b981" fill="url(#colorRevenue)" strokeWidth={4} name="Retorno" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -369,7 +416,7 @@ function App() {
                   {selectedClient.campaigns.map((campaign) => (
                     <div 
                       key={campaign.id} 
-                      onClick={() => setSelectedCampaign(campaign)}
+                      onClick={() => setPreviewCampaign(campaign)}
                       className="bg-white rounded-[32px] border border-slate-200 shadow-sm hover:shadow-xl hover:border-indigo-300 transition-all cursor-pointer group flex flex-col md:flex-row overflow-hidden"
                     >
                       <div className="w-full md:w-52 h-52 md:h-auto bg-slate-100 flex-shrink-0 relative overflow-hidden">
@@ -407,16 +454,19 @@ function App() {
 
                         <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
                           <div>
-                            <p className="text-[8px] text-slate-400 uppercase font-black mb-1">Investido</p>
+                            <p className="text-[8px] text-slate-400 uppercase font-black mb-1">Gasto</p>
                             <p className="font-black text-slate-900 text-xs truncate">R$ {campaign.metrics.spend.toLocaleString('pt-BR')}</p>
                           </div>
                           <div>
-                            <p className="text-[8px] text-slate-400 uppercase font-black mb-1">ROAS</p>
-                            <p className="font-black text-indigo-600 text-xs">{(campaign.metrics.conversionValue / (campaign.metrics.spend || 1)).toFixed(2)}x</p>
+                            <p className="text-[8px] text-slate-400 uppercase font-black mb-1 flex items-center gap-1">
+                              {getObjectiveLabel(campaign.objective)}
+                              <HelpCircle className="w-2.5 h-2.5" />
+                            </p>
+                            <p className="font-black text-indigo-600 text-xs">{campaign.metrics.conversions || 0}</p>
                           </div>
                           <div>
-                            <p className="text-[8px] text-slate-400 uppercase font-black mb-1">CPA</p>
-                            <p className="font-black text-slate-900 text-xs truncate">R$ {(campaign.metrics.spend / (campaign.metrics.conversions || 1)).toFixed(2)}</p>
+                            <p className="text-[8px] text-slate-400 uppercase font-black mb-1">ROAS</p>
+                            <p className="font-black text-slate-900 text-xs truncate">{(campaign.metrics.conversionValue / (campaign.metrics.spend || 1)).toFixed(2)}x</p>
                           </div>
                         </div>
                       </div>
@@ -429,8 +479,18 @@ function App() {
         )}
       </main>
 
+      {/* Modal de Detalhes da Campanha */}
       {selectedCampaign && (
         <CampaignDetails campaign={selectedCampaign} onClose={() => setSelectedCampaign(null)} />
+      )}
+
+      {/* Modal de Preview do Criativo */}
+      {previewCampaign && (
+        <CreativePreviewModal 
+          campaign={previewCampaign} 
+          onClose={() => setPreviewCampaign(null)}
+          onOpenDetails={() => handleOpenDetails(previewCampaign)}
+        />
       )}
 
       {session.role === 'admin' && (

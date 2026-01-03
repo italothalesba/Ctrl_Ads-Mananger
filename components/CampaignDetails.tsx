@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Campaign, AdSet, Ad } from '../types.ts';
-import { X, Target, Activity, Sparkles, Loader2, Users, BarChart3, Layers, LayoutGrid, Play, MapPin, UserCheck, UserPlus, Users2, AlertCircle } from 'lucide-react';
+import { X, Target, Activity, Sparkles, Loader2, Users, BarChart3, Layers, LayoutGrid, Play, MapPin, UserCheck, UserPlus, Users2, AlertCircle, Info, BookOpen } from 'lucide-react';
 import { analyzeCampaignPerformance } from '../services/geminiService.ts';
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, Legend } from 'recharts';
 import ReactMarkdown from 'react-markdown';
@@ -46,12 +46,6 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
 
   const allAds: Ad[] = adSets?.flatMap(as => as.ads) || [];
 
-  const formatVideoTime = (seconds: number) => {
-    const min = Math.floor(seconds / 60);
-    const sec = Math.floor(seconds % 60);
-    return `${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
-  };
-
   const renderAudienceDetails = (audienceStr: string) => {
     try {
       const t = JSON.parse(audienceStr);
@@ -76,6 +70,15 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
       return <p className="text-xs text-slate-500 mt-2 italic font-medium">{audienceStr}</p>;
     }
   };
+
+  const glossaryItems = [
+    { term: "ROAS", desc: "Retorno sobre o Investimento. 2.0x significa que para cada R$1,00 gasto, retornou R$2,00." },
+    { term: "CTR", desc: "Taxa de cliques. Quantidade de pessoas que viram o anúncio e clicaram nele." },
+    { term: "CPC", desc: "Custo por Clique. Média de quanto você paga por cada pessoa que clica." },
+    { term: "CPM", desc: "Custo por Mil Impressões. Valor médio para mostrar seu anúncio 1.000 vezes." },
+    { term: "CPA / Custo Res.", desc: "Custo por Ação ou Resultado. Média paga para cada conversão (Lead/Compra)." },
+    { term: "Frequência", desc: "Média de quantas vezes uma única pessoa viu seu anúncio." }
+  ];
 
   return (
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex justify-end">
@@ -108,8 +111,8 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
           {activeTab === 'overview' && (
             <div className="space-y-8 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
-                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                  <p className="text-[9px] font-black text-slate-400 uppercase mb-2">Investimento</p>
+                <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm relative group">
+                  <p className="text-[9px] font-black text-slate-400 uppercase mb-2 flex items-center gap-1">Investimento <Info className="w-2.5 h-2.5" /></p>
                   <p className="text-2xl font-black text-slate-900">R$ {metrics.spend.toLocaleString('pt-BR')}</p>
                 </div>
                 <div className="bg-indigo-600 p-6 rounded-3xl text-white shadow-xl shadow-indigo-100">
@@ -126,7 +129,7 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
                 <h3 className="font-black text-slate-900 text-base uppercase tracking-tight mb-8">Público por Gênero e Idade</h3>
                 {demographicChartData ? (
                   <div className="h-[300px] w-full min-w-0 relative">
-                    <ResponsiveContainer width="100%" height="100%">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                       <ReBarChart data={demographicChartData}>
                         <CartesianGrid vertical={false} stroke="#f1f5f9" />
                         <XAxis dataKey="age" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 700}} />
@@ -166,6 +169,24 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
                   </div>
                 )}
               </section>
+
+              {/* Glossário / Legenda de Siglas */}
+              <div className="bg-slate-50 border border-slate-200 rounded-[32px] p-6 md:p-8">
+                <div className="flex items-center gap-3 mb-6">
+                   <div className="bg-indigo-100 p-2 rounded-xl text-indigo-600">
+                      <BookOpen className="w-5 h-5" />
+                   </div>
+                   <h3 className="text-xs font-black uppercase tracking-widest text-slate-900">Legenda de Métricas</h3>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                   {glossaryItems.map((item, idx) => (
+                     <div key={idx} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm">
+                        <p className="text-[10px] font-black text-indigo-600 uppercase mb-1">{item.term}</p>
+                        <p className="text-[11px] text-slate-500 font-medium leading-relaxed">{item.desc}</p>
+                     </div>
+                   ))}
+                </div>
+              </div>
             </div>
           )}
 

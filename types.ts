@@ -6,6 +6,12 @@ export interface DemographicData {
   results: number;
 }
 
+export interface DailyStat {
+  date: string;
+  spend: number;
+  revenue: number;
+}
+
 export interface VideoMetrics {
   plays: number;
   avgTime: number;
@@ -83,6 +89,7 @@ export interface Client {
   accessToken?: string;
   lastSync?: string;
   campaigns: Campaign[];
+  dailyStats?: DailyStat[];
   // Novos campos para acesso individual
   loginEmail?: string;
   loginPassword?: string;
