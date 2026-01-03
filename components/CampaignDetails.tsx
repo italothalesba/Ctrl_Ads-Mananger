@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Campaign, AdSet, Ad } from '../types.ts';
-import { X, Target, Activity, Sparkles, Loader2, Users, BarChart3, Layers, LayoutGrid, Play, MapPin, UserCheck, UserPlus, Users2, AlertCircle, Info, BookOpen } from 'lucide-react';
+import { X, Target, Activity, Sparkles, Loader2, Users, BarChart3, Layers, LayoutGrid, Play, MapPin, UserCheck, UserPlus, Users2, AlertCircle, Info, BookOpen, Wallet, MousePointer2, Eye } from 'lucide-react';
 import { analyzeCampaignPerformance } from '../services/geminiService.ts';
 import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as ReTooltip, ResponsiveContainer, Legend } from 'recharts';
 import ReactMarkdown from 'react-markdown';
@@ -67,7 +67,14 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
         </div>
       );
     } catch {
-      return <p className="text-xs text-slate-500 mt-2 italic font-medium">{audienceStr}</p>;
+      return (
+        <div className="mt-3 p-3 bg-white border border-slate-100 rounded-xl">
+           <p className="text-[10px] font-black text-slate-400 uppercase mb-1 flex items-center gap-1">
+             <Target className="w-3 h-3" /> Segmentação
+           </p>
+           <p className="text-xs text-slate-600 font-medium leading-relaxed italic">"{audienceStr}"</p>
+        </div>
+      );
     }
   };
 
@@ -170,7 +177,6 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
                 )}
               </section>
 
-              {/* Glossário / Legenda de Siglas */}
               <div className="bg-slate-50 border border-slate-200 rounded-[32px] p-6 md:p-8">
                 <div className="flex items-center gap-3 mb-6">
                    <div className="bg-indigo-100 p-2 rounded-xl text-indigo-600">
@@ -192,34 +198,76 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
 
           {activeTab === 'adsets' && (
             <div className="space-y-6 animate-fade-in">
-              {adSets?.map(adset => (
-                <div key={adset.id} className="bg-white rounded-[28px] border border-slate-200 shadow-sm overflow-hidden">
-                  <div className="p-5 bg-slate-50/50 border-b border-slate-100 flex justify-between items-center">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-2 h-2 rounded-full ${adset.status === 'active' ? 'bg-emerald-500' : 'bg-slate-300'}`}></div>
-                      <h4 className="font-black text-slate-900 text-sm">{adset.name}</h4>
+              {adSets?.map(adset => {
+                const adsetSpend = adset.metrics.spend || 0;
+                const adsetConversions = adset.metrics.conversions || 0;
+                const adsetClicks = adset.metrics.clicks || 0;
+                const adsetImpressions = adset.metrics.impressions || 1;
+                const adsetCtr = (adsetClicks / adsetImpressions) * 100;
+                const adsetCpc = adsetClicks > 0 ? adsetSpend / adsetClicks : 0;
+                const adsetRoas = adsetSpend > 0 ? (adset.metrics.conversionValue / adsetSpend) : 0;
+
+                return (
+                  <div key={adset.id} className="bg-white rounded-[32px] border border-slate-200 shadow-sm overflow-hidden hover:shadow-lg transition-all">
+                    <div className="p-6 bg-slate-50/80 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                      <div className="flex items-center gap-3">
+                        <div className={`px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest ${adset.status === 'active' ? 'bg-emerald-100 text-emerald-600 border border-emerald-200' : 'bg-slate-100 text-slate-400 border border-slate-200'}`}>
+                          {adset.status === 'active' ? 'Ativo' : 'Pausado'}
+                        </div>
+                        <h4 className="font-black text-slate-900 text-sm leading-tight">{adset.name}</h4>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <p className="text-[8px] font-black text-slate-400 uppercase leading-none mb-1">Orçamento {adset.budgetType === 'DAILY' ? 'Diário' : 'Total'}</p>
+                          <p className="text-xs font-black text-slate-900">R$ {adset.budget?.toLocaleString('pt-BR')}</p>
+                        </div>
+                        <div className="w-px h-8 bg-slate-200 mx-1 hidden md:block"></div>
+                        <div className="bg-white px-3 py-1.5 rounded-xl border border-slate-100 flex items-center gap-2">
+                           <LayoutGrid className="w-3 h-3 text-indigo-400" />
+                           <span className="text-[10px] font-black text-slate-600">{adset.ads.length} Anúncios</span>
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-[9px] font-black text-slate-400 uppercase">Budget: R$ {adset.budget}</span>
-                  </div>
-                  <div className="p-5">
-                    {renderAudienceDetails(adset.audience)}
-                    <div className="grid grid-cols-4 gap-4 mt-6">
-                       <div>
-                          <p className="text-[8px] font-black text-slate-400 uppercase">Investido</p>
-                          <p className="text-xs font-black text-slate-800">R$ {adset.metrics.spend}</p>
-                       </div>
-                       <div>
-                          <p className="text-[8px] font-black text-slate-400 uppercase">Conv.</p>
-                          <p className="text-xs font-black text-slate-800">{adset.metrics.conversions || 0}</p>
-                       </div>
-                       <div>
-                          <p className="text-[8px] font-black text-slate-400 uppercase">ROAS</p>
-                          <p className="text-xs font-black text-indigo-600">{(adset.metrics.conversionValue / (adset.metrics.spend || 1)).toFixed(2)}x</p>
-                       </div>
+                    
+                    <div className="p-6">
+                      {renderAudienceDetails(adset.audience)}
+                      
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-6 mt-8">
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase mb-1.5 flex items-center gap-1.5">
+                             <Wallet className="w-3 h-3" /> Gasto
+                          </p>
+                          <p className="text-sm font-black text-slate-900">R$ {adsetSpend.toLocaleString('pt-BR')}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase mb-1.5 flex items-center gap-1.5">
+                             <Eye className="w-3 h-3" /> Impr.
+                          </p>
+                          <p className="text-sm font-black text-slate-900">{adsetImpressions.toLocaleString('pt-BR')}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase mb-1.5 flex items-center gap-1.5">
+                             <MousePointer2 className="w-3 h-3" /> CTR
+                          </p>
+                          <p className="text-sm font-black text-slate-900">{adsetCtr.toFixed(2)}%</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase mb-1.5">Resultados</p>
+                          <p className="text-sm font-black text-indigo-600">{adsetConversions}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase mb-1.5">CPC</p>
+                          <p className="text-sm font-black text-slate-900">R$ {adsetCpc.toFixed(2)}</p>
+                        </div>
+                        <div>
+                          <p className="text-[9px] font-black text-slate-400 uppercase mb-1.5">ROAS</p>
+                          <p className="text-sm font-black text-emerald-600">{adsetRoas.toFixed(2)}x</p>
+                        </div>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -238,11 +286,11 @@ export const CampaignDetails: React.FC<CampaignDetailsProps> = ({ campaign, onCl
                       <div className="grid grid-cols-4 gap-4">
                         <div>
                           <p className="text-[8px] font-black text-slate-400 uppercase">Gasto</p>
-                          <p className="text-xs font-black text-slate-800">R$ {ad.metrics.spend}</p>
+                          <p className="text-xs font-black text-slate-800">R$ {ad.metrics.spend.toLocaleString('pt-BR')}</p>
                         </div>
                         <div>
                           <p className="text-[8px] font-black text-slate-400 uppercase">Cliques</p>
-                          <p className="text-xs font-black text-slate-800">{ad.metrics.clicks}</p>
+                          <p className="text-xs font-black text-slate-800">{ad.metrics.clicks.toLocaleString('pt-BR')}</p>
                         </div>
                         <div>
                           <p className="text-[8px] font-black text-slate-400 uppercase">CTR</p>
