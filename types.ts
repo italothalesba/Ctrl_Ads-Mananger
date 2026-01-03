@@ -1,3 +1,4 @@
+
 export interface DemographicData {
   age: string;
   gender: 'male' | 'female' | 'unknown';
@@ -82,4 +83,7 @@ export interface Client {
   accessToken?: string;
   lastSync?: string;
   campaigns: Campaign[];
+  // Novos campos para acesso individual
+  loginEmail?: string;
+  loginPassword?: string;
 }

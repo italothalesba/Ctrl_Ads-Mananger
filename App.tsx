@@ -4,6 +4,7 @@ import { Sidebar } from './components/Sidebar.tsx';
 import { StatCard } from './components/StatCard.tsx';
 import { CampaignDetails } from './components/CampaignDetails.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
+import { AccessManagementModal } from './components/AccessManagementModal.tsx';
 import { DateRangePicker, DatePreset } from './components/DateRangePicker.tsx';
 import { Login } from './components/Login.tsx';
 import { Client, Campaign } from './types.ts';
@@ -12,6 +13,12 @@ import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { syncMetaAdsData, MetaAccountInfo } from './services/metaService.ts';
 import { db } from './firebase.ts';
 import { collection, onSnapshot, setDoc, doc, deleteDoc, query } from 'firebase/firestore';
+
+interface UserSession {
+  email: string;
+  role: 'admin' | 'client';
+  clientId?: string;
+}
 
 const sanitizeData = (obj: any): any => {
   if (Array.isArray(obj)) {
@@ -27,18 +34,20 @@ const sanitizeData = (obj: any): any => {
 };
 
 function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [session, setSession] = useState<UserSession | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   const [clients, setClients] = useState<Client[]>([]);
-  const clientsRef = useRef<Client[]>([]); // Ref para evitar dependência circular no sync
+  const clientsRef = useRef<Client[]>([]);
   const [selectedClientId, setSelectedClientId] = useState<string>('');
   const [selectedCampaign, setSelectedCampaign] = useState<Campaign | null>(null);
   
   const [datePreset, setDatePreset] = useState<DatePreset>('this_month');
+  const [customRange, setCustomRange] = useState<{ since: string; until: string } | undefined>(undefined);
+  
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -46,18 +55,15 @@ function App() {
   const initialLoadDone = useRef(false);
   const isFirebaseAvailable = !!db;
 
-  // Atualiza o Ref sempre que o estado mudar
   useEffect(() => {
     clientsRef.current = clients;
   }, [clients]);
 
   useEffect(() => {
     try {
-      const savedAuth = localStorage.getItem('ads_manager_auth');
+      const savedAuth = localStorage.getItem('ads_manager_auth_v2');
       if (savedAuth) {
-        const authData = JSON.parse(savedAuth);
-        setIsAuthenticated(true);
-        setUserEmail(authData.email);
+        setSession(JSON.parse(savedAuth));
       }
     } catch (e) {
       console.error("Erro ao ler auth local:", e);
@@ -67,7 +73,7 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!isAuthenticated || !isFirebaseAvailable) return;
+    if (!session || !isFirebaseAvailable) return;
 
     try {
       const q = query(collection(db, "clients"));
@@ -79,10 +85,15 @@ function App() {
         
         setClients(clientsData);
         
-        setSelectedClientId(currentId => {
-          if (currentId && clientsData.some(c => c.id === currentId)) return currentId;
-          return clientsData.length > 0 ? clientsData[0].id : '';
-        });
+        // Se for cliente, travar o ID. Se for admin, manter lógica normal.
+        if (session.role === 'client' && session.clientId) {
+          setSelectedClientId(session.clientId);
+        } else {
+          setSelectedClientId(currentId => {
+            if (currentId && clientsData.some(c => c.id === currentId)) return currentId;
+            return clientsData.length > 0 ? clientsData[0].id : '';
+          });
+        }
       }, (error) => {
         console.error("Erro no Firestore Snapshot:", error);
         setSyncError("Erro de conexão com o banco de dados.");
@@ -92,18 +103,18 @@ function App() {
       console.error("Erro ao iniciar snapshot:", err);
       setSyncError("Erro crítico de inicialização.");
     }
-  }, [isAuthenticated, isFirebaseAvailable]);
+  }, [session, isFirebaseAvailable]);
 
-  const handleSyncData = useCallback(async (clientId: string, preset: DatePreset) => {
+  const handleSyncData = useCallback(async (clientId: string, preset: DatePreset, range?: { since: string; until: string }) => {
     const clientToSync = clientsRef.current.find(c => c.id === clientId);
-    if (!isAuthenticated || !clientToSync || isSyncing) return;
+    if (!session || !clientToSync || isSyncing) return;
 
     setIsSyncing(true);
     setSyncError(null);
 
     try {
       if (clientToSync.adAccountId && clientToSync.accessToken) {
-        const updatedClientData = await syncMetaAdsData(clientToSync, preset);
+        const updatedClientData = await syncMetaAdsData(clientToSync, preset, range);
         if (isFirebaseAvailable) {
           const sanitized = sanitizeData(updatedClientData);
           await setDoc(doc(db, "clients", sanitized.id), sanitized, { merge: true });
@@ -115,31 +126,39 @@ function App() {
     } finally {
       setIsSyncing(false);
     }
-  }, [isAuthenticated, isSyncing, isFirebaseAvailable]);
+  }, [session, isSyncing, isFirebaseAvailable]);
 
-  // Sincronização automática controlada: Dispara apenas quando o ID ou o Preset mudam
   useEffect(() => {
-    if (isAuthenticated && selectedClientId) {
+    if (session && selectedClientId) {
       if (initialLoadDone.current) {
-        handleSyncData(selectedClientId, datePreset);
+        handleSyncData(selectedClientId, datePreset, customRange);
       } else {
         initialLoadDone.current = true;
       }
     }
-  }, [datePreset, selectedClientId, isAuthenticated]); // Removido handleSyncData das dependências
+  }, [datePreset, selectedClientId, session, customRange]);
 
-  const handleLogin = (email: string) => {
-    setIsAuthenticated(true);
-    setUserEmail(email);
-    localStorage.setItem('ads_manager_auth', JSON.stringify({ email, timestamp: Date.now() }));
+  const handleDateSelect = (preset: DatePreset, range?: { since: string; until: string }) => {
+    setDatePreset(preset);
+    setCustomRange(range);
+  };
+
+  const handleLogin = (user: UserSession) => {
+    setSession(user);
+    localStorage.setItem('ads_manager_auth_v2', JSON.stringify(user));
   };
 
   const handleLogout = () => {
     if (window.confirm('Deseja realmente sair?')) {
-      setIsAuthenticated(false);
-      setUserEmail(null);
-      localStorage.removeItem('ads_manager_auth');
+      setSession(null);
+      localStorage.removeItem('ads_manager_auth_v2');
     }
+  };
+
+  const handleUpdateClientAccess = async (clientId: string, email: string, pass: string) => {
+    if (!isFirebaseAvailable) return;
+    const clientRef = doc(db, "clients", clientId);
+    await setDoc(clientRef, { loginEmail: email, loginPassword: pass }, { merge: true });
   };
 
   const selectedClient = useMemo(() => {
@@ -189,8 +208,7 @@ function App() {
         await setDoc(doc(db, "clients", sanitized.id), sanitized, { merge: true });
         setSelectedClientId(clientId);
         setIsSettingsOpen(false);
-        // Sync inicial focado
-        setTimeout(() => handleSyncData(clientId, datePreset), 500);
+        setTimeout(() => handleSyncData(clientId, datePreset, customRange), 500);
       }
     } catch (e: any) {
       alert("Erro ao salvar no banco de dados.");
@@ -215,7 +233,7 @@ function App() {
     );
   }
 
-  if (!isAuthenticated) return <Login onLogin={handleLogin} />;
+  if (!session) return <Login onLogin={handleLogin} />;
 
   return (
     <div className="flex bg-slate-50 min-h-screen">
@@ -224,10 +242,12 @@ function App() {
         selectedClientId={selectedClientId} 
         onSelectClient={setSelectedClientId} 
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenAccessManagement={() => setIsAccessModalOpen(true)}
         onDeleteClient={handleDeleteClient}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         onLogout={handleLogout}
+        isAdmin={session.role === 'admin'}
       />
 
       <main className="flex-1 w-full lg:ml-64 transition-all duration-300 overflow-x-hidden relative">
@@ -247,9 +267,11 @@ function App() {
               </div>
               <h2 className="text-xl font-black text-slate-900 mb-2">Início do Dashboard</h2>
               <p className="text-slate-500 text-sm font-medium mb-8">Conecte sua primeira conta do Meta Ads para centralizar os dados.</p>
-              <button onClick={() => setIsSettingsOpen(true)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl">
-                Conectar Conta
-              </button>
+              {session.role === 'admin' && (
+                <button onClick={() => setIsSettingsOpen(true)} className="w-full bg-indigo-600 text-white py-3 rounded-xl font-black uppercase text-xs tracking-widest shadow-xl">
+                  Conectar Conta
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -279,7 +301,7 @@ function App() {
               
               <div className="flex flex-wrap gap-3 w-full md:w-auto">
                 <button 
-                  onClick={() => handleSyncData(selectedClientId, datePreset)}
+                  onClick={() => handleSyncData(selectedClientId, datePreset, customRange)}
                   disabled={isSyncing}
                   className={`flex-1 md:flex-none flex items-center justify-center gap-3 px-6 py-3 rounded-xl text-xs font-black uppercase transition-all shadow-lg active:scale-95 ${
                     isSyncing 
@@ -290,7 +312,11 @@ function App() {
                   <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
                   {isSyncing ? 'Sincronizando...' : 'Sincronizar Agora'}
                 </button>
-                <DateRangePicker selected={datePreset} onSelect={setDatePreset} />
+                <DateRangePicker 
+                  selected={datePreset} 
+                  onSelect={handleDateSelect} 
+                  initialCustomRange={customRange}
+                />
               </div>
             </header>
 
@@ -407,12 +433,22 @@ function App() {
         <CampaignDetails campaign={selectedCampaign} onClose={() => setSelectedCampaign(null)} />
       )}
 
-      <SettingsModal
-        initialClient={null}
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        onSave={handleSaveAccount}
-      />
+      {session.role === 'admin' && (
+        <>
+          <SettingsModal
+            initialClient={null}
+            isOpen={isSettingsOpen}
+            onClose={() => setIsSettingsOpen(false)}
+            onSave={handleSaveAccount}
+          />
+          <AccessManagementModal
+            clients={clients}
+            isOpen={isAccessModalOpen}
+            onClose={() => setIsAccessModalOpen(false)}
+            onUpdateAccess={handleUpdateClientAccess}
+          />
+        </>
+      )}
     </div>
   );
 }

@@ -1,9 +1,17 @@
 
 import React, { useState } from 'react';
-import { Lock, Mail, PieChart, ArrowRight, Loader2, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, PieChart, ArrowRight, Loader2, ShieldCheck, AlertCircle } from 'lucide-react';
+import { db } from '../firebase.ts';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+
+interface UserInfo {
+  email: string;
+  role: 'admin' | 'client';
+  clientId?: string;
+}
 
 interface LoginProps {
-  onLogin: (email: string) => void;
+  onLogin: (user: UserInfo) => void;
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
@@ -12,20 +20,44 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
 
-    // Simulação de autenticação
-    setTimeout(() => {
+    try {
+      // 1. Verificar se é Admin (Hardcoded por segurança do exemplo)
       if (email === 'admin@adsmanager.com' && password === 'admin123') {
-        onLogin(email);
-      } else {
-        setError('Credenciais inválidas. Tente admin@adsmanager.com / admin123');
-        setIsLoading(false);
+        onLogin({ email, role: 'admin' });
+        return;
       }
-    }, 1500);
+
+      // 2. Verificar se é um Cliente no Firestore
+      const clientsRef = collection(db, "clients");
+      const q = query(
+        clientsRef, 
+        where("loginEmail", "==", email), 
+        where("loginPassword", "==", password)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      
+      if (!querySnapshot.empty) {
+        const clientData = querySnapshot.docs[0].data();
+        onLogin({ 
+          email: clientData.loginEmail, 
+          role: 'client', 
+          clientId: clientData.id 
+        });
+      } else {
+        setError('Credenciais inválidas. Verifique seu e-mail e senha.');
+      }
+    } catch (e: any) {
+      console.error(e);
+      setError('Erro ao conectar com o servidor. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -41,12 +73,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <PieChart className="w-8 h-8 text-white" />
             </div>
             <h1 className="text-2xl font-black text-white tracking-tight">AdsManager Pro</h1>
-            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Acesso Administrativo</p>
+            <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Plataforma de Performance</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">E-mail Corporativo</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">E-mail de Acesso</label>
               <div className="relative">
                 <input
                   type="email"
@@ -61,7 +93,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </div>
 
             <div>
-              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Senha de Acesso</label>
+              <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">Senha</label>
               <div className="relative">
                 <input
                   type="password"
@@ -76,8 +108,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </div>
 
             {error && (
-              <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl flex items-center gap-3 text-rose-400 text-xs font-bold animate-shake">
-                <ShieldCheck className="w-4 h-4" />
+              <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl flex items-center gap-3 text-rose-400 text-[11px] font-bold animate-shake">
+                <AlertCircle className="w-4 h-4" />
                 {error}
               </div>
             )}
@@ -100,7 +132,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           <div className="mt-8 pt-6 border-t border-white/5 text-center">
             <p className="text-slate-500 text-[10px] font-medium uppercase tracking-tighter">
-              Sistema de monitoramento de tráfego v3.2.0 • 2024
+              Acesso individual para agências e clientes.
             </p>
           </div>
         </div>

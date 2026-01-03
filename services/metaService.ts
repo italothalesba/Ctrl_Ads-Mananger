@@ -83,22 +83,37 @@ export const validateMetaConnection = async (adAccountId: string, accessToken: s
   return { id: json.id, name: json.name, currency: json.currency };
 };
 
-export const syncMetaAdsData = async (client: Client, datePreset: string = 'this_month'): Promise<Client> => {
+export const syncMetaAdsData = async (
+  client: Client, 
+  datePreset: string = 'this_month',
+  customRange?: { since: string; until: string }
+): Promise<Client> => {
   if (!client.adAccountId || !client.accessToken) throw new Error("Credenciais ausentes.");
-  const metaPreset = mapDatePreset(datePreset);
+  
   const accountId = client.adAccountId.startsWith('act_') ? client.adAccountId : `act_${client.adAccountId}`;
   const token = client.accessToken;
   const insightsFields = `spend,impressions,reach,frequency,cpm,clicks,actions,action_values,video_avg_time_watched_actions`;
-  const insightsParams = `.date_preset(${metaPreset})`;
+  
+  // Define o seletor de data (Preset ou Range Personalizado)
+  let dateQuery = '';
+  if (datePreset === 'custom' && customRange) {
+    const range = JSON.stringify({ since: customRange.since, until: customRange.until });
+    dateQuery = `time_range=${range}`;
+  } else {
+    dateQuery = `date_preset=${mapDatePreset(datePreset)}`;
+  }
+
+  const insightsParams = `.${dateQuery.replace('=', '(').replace(/$/, ')')}`;
   
   try {
-    const url = `https://graph.facebook.com/v19.0/${accountId}/campaigns?fields=id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time,insights${insightsParams}{${insightsFields}},adsets{id,name,status,daily_budget,lifetime_budget,targeting,insights${insightsParams}{${insightsFields}},ads{id,name,status,creative{id,title,image_url,thumbnail_url},insights${insightsParams}{${insightsFields}}}}&date_preset=${metaPreset}&access_token=${token}`;
+    const url = `https://graph.facebook.com/v19.0/${accountId}/campaigns?fields=id,name,status,objective,daily_budget,lifetime_budget,start_time,stop_time,insights${insightsParams}{${insightsFields}},adsets{id,name,status,daily_budget,lifetime_budget,targeting,insights${insightsParams}{${insightsFields}},ads{id,name,status,creative{id,title,image_url,thumbnail_url},insights${insightsParams}{${insightsFields}}}}&${dateQuery}&access_token=${token}`;
+    
     const response = await fetch(url);
     const json = await response.json();
     if (json.error) throw new Error(json.error.message);
 
     const campaigns: Campaign[] = await Promise.all(json.data.map(async (fbCamp: any) => {
-      const demoUrl = `https://graph.facebook.com/v19.0/${fbCamp.id}/insights?breakdowns=age,gender&fields=spend,actions&date_preset=${metaPreset}&access_token=${token}`;
+      const demoUrl = `https://graph.facebook.com/v19.0/${fbCamp.id}/insights?breakdowns=age,gender&fields=spend,actions&${dateQuery}&access_token=${token}`;
       const demoRes = await fetch(demoUrl);
       const demoJson = await demoRes.json();
       const demographics: DemographicData[] = (demoJson.data || []).map((d: any) => ({
@@ -146,7 +161,7 @@ export const syncMetaAdsData = async (client: Client, datePreset: string = 'this
         endTime: fbCamp.stop_time || null,
         adSets,
         creative: adSets[0]?.ads[0]?.creative || { id: '0', type: 'image', url: '', headline: fbCamp.name },
-        audience: adSets[0]?.name || 'Público Geral' // Usando o nome do primeiro conjunto como fallback de audiência
+        audience: adSets[0]?.name || 'Público Geral'
       };
     }));
     return { ...client, lastSync: new Date().toLocaleTimeString(), campaigns };

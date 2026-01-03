@@ -1,5 +1,6 @@
+
 import React, { useState, useRef, useEffect } from 'react';
-import { Calendar, ChevronDown } from 'lucide-react';
+import { Calendar, ChevronDown, Check } from 'lucide-react';
 
 export type DatePreset = 
   | 'maximum' | 'today' | 'yesterday' | 'today_and_yesterday' 
@@ -9,7 +10,8 @@ export type DatePreset =
 
 interface DateRangePickerProps {
   selected: DatePreset;
-  onSelect: (preset: DatePreset) => void;
+  onSelect: (preset: DatePreset, customRange?: { since: string; until: string }) => void;
+  initialCustomRange?: { since: string; until: string };
 }
 
 const PRESETS: { id: DatePreset; label: string }[] = [
@@ -28,8 +30,10 @@ const PRESETS: { id: DatePreset; label: string }[] = [
   { id: 'custom', label: 'Personalizado' },
 ];
 
-export const DateRangePicker: React.FC<DateRangePickerProps> = ({ selected, onSelect }) => {
+export const DateRangePicker: React.FC<DateRangePickerProps> = ({ selected, onSelect, initialCustomRange }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [since, setSince] = useState(initialCustomRange?.since || '');
+  const [until, setUntil] = useState(initialCustomRange?.until || '');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -42,7 +46,16 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ selected, onSe
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const selectedLabel = PRESETS.find(p => p.id === selected)?.label || 'Período';
+  const handleApplyCustom = () => {
+    if (since && until) {
+      onSelect('custom', { since, until });
+      setIsOpen(false);
+    }
+  };
+
+  const selectedLabel = selected === 'custom' && initialCustomRange 
+    ? `${initialCustomRange.since} a ${initialCustomRange.until}`
+    : PRESETS.find(p => p.id === selected)?.label || 'Período';
 
   return (
     <div className="relative" ref={containerRef}>
@@ -56,36 +69,62 @@ export const DateRangePicker: React.FC<DateRangePickerProps> = ({ selected, onSe
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[100] py-4 animate-fade-in-up">
-          <div className="px-6 pb-2 mb-2 border-b border-slate-100">
-            <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Usados recentemente</h4>
+        <div className="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-2xl z-[100] py-4 animate-fade-in-up flex flex-col">
+          <div className="px-6 pb-2 mb-2 border-b border-slate-100 flex items-center justify-between">
+            <h4 className="text-[11px] font-black text-slate-400 uppercase tracking-widest">Escolha o Período</h4>
           </div>
-          <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
-            {PRESETS.map((preset) => (
-              <label 
+          
+          <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+            {PRESETS.filter(p => p.id !== 'custom').map((preset) => (
+              <button 
                 key={preset.id}
-                className="flex items-center px-6 py-2.5 hover:bg-slate-50 cursor-pointer transition-colors group"
+                onClick={() => {
+                  onSelect(preset.id);
+                  setIsOpen(false);
+                }}
+                className={`w-full text-left px-6 py-2.5 hover:bg-slate-50 transition-colors flex items-center justify-between group ${selected === preset.id ? 'bg-indigo-50/50' : ''}`}
               >
-                <div className="relative flex items-center justify-center mr-3">
-                  <input 
-                    type="radio" 
-                    name="date-preset"
-                    className="appearance-none w-5 h-5 border-2 border-slate-300 rounded-full checked:border-indigo-600 transition-all"
-                    checked={selected === preset.id}
-                    onChange={() => {
-                      onSelect(preset.id);
-                      setIsOpen(false);
-                    }}
-                  />
-                  {selected === preset.id && (
-                    <div className="absolute w-2.5 h-2.5 bg-indigo-600 rounded-full" />
-                  )}
-                </div>
-                <span className={`text-sm font-semibold transition-colors ${selected === preset.id ? 'text-slate-900' : 'text-slate-500 group-hover:text-slate-700'}`}>
+                <span className={`text-sm font-semibold ${selected === preset.id ? 'text-indigo-600' : 'text-slate-500 group-hover:text-slate-700'}`}>
                   {preset.label}
                 </span>
-              </label>
+                {selected === preset.id && <Check className="w-4 h-4 text-indigo-600" />}
+              </button>
             ))}
+          </div>
+
+          <div className="p-4 bg-slate-50 border-t border-slate-100 mt-2 rounded-b-2xl">
+             <h5 className="text-[10px] font-black text-slate-400 uppercase mb-3 flex items-center gap-2">
+               <Calendar className="w-3 h-3" /> Personalizado
+             </h5>
+             <div className="space-y-3">
+               <div className="grid grid-cols-2 gap-2">
+                 <div>
+                   <label className="text-[8px] font-black text-slate-400 uppercase mb-1 block">Início</label>
+                   <input 
+                     type="date" 
+                     value={since}
+                     onChange={(e) => setSince(e.target.value)}
+                     className="w-full text-[10px] p-2 border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                   />
+                 </div>
+                 <div>
+                   <label className="text-[8px] font-black text-slate-400 uppercase mb-1 block">Fim</label>
+                   <input 
+                     type="date" 
+                     value={until}
+                     onChange={(e) => setUntil(e.target.value)}
+                     className="w-full text-[10px] p-2 border border-slate-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500 font-bold"
+                   />
+                 </div>
+               </div>
+               <button 
+                onClick={handleApplyCustom}
+                disabled={!since || !until}
+                className="w-full bg-slate-900 text-white py-2 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 transition-all disabled:opacity-50"
+               >
+                 Aplicar Período
+               </button>
+             </div>
           </div>
         </div>
       )}
