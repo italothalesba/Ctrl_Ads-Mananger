@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Client } from '../types';
-import { LayoutDashboard, Users, CreditCard, PlusCircle, PieChart, Trash2, X, LogOut, ShieldCheck, FileText } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, PlusCircle, PieChart, Trash2, X, LogOut, ShieldCheck, FileText, Settings } from 'lucide-react';
 
 interface SidebarProps {
   clients: Client[];
@@ -10,6 +10,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenAccessManagement: () => void;
   onDeleteClient: (id: string) => void;
+  onEditClient: (client: Client) => void;
   isOpen: boolean;
   onClose: () => void;
   onLogout?: () => void;
@@ -25,6 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenSettings, 
   onOpenAccessManagement,
   onDeleteClient,
+  onEditClient,
   isOpen,
   onClose,
   onLogout,
@@ -103,17 +105,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       </div>
                     </div>
 
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if(window.confirm(`Tem certeza que deseja remover o cliente ${client.name}?`)) {
-                          onDeleteClient(client.id);
-                        }
-                      }}
-                      className={`p-1.5 rounded-md hover:bg-rose-500/20 hover:text-rose-400 transition-colors ${selectedClientId === client.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onEditClient(client);
+                        }}
+                        className="p-1.5 rounded-md hover:bg-indigo-500/20 hover:text-indigo-400 transition-colors"
+                        title="Configurar Conexão"
+                      >
+                        <Settings className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if(window.confirm(`Tem certeza que deseja remover o cliente ${client.name}?`)) {
+                            onDeleteClient(client.id);
+                          }
+                        }}
+                        className="p-1.5 rounded-md hover:bg-rose-500/20 hover:text-rose-400 transition-colors"
+                        title="Remover Cliente"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>

@@ -56,6 +56,8 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   
+  const [clientToEdit, setClientToEdit] = useState<Client | null>(null);
+  
   const [isSyncing, setIsSyncing] = useState(false);
   const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
@@ -238,19 +240,29 @@ function App() {
     });
   }, [selectedClient]);
 
+  const handleEditClient = (client: Client) => {
+    setClientToEdit(client);
+    setIsSettingsOpen(true);
+  };
+
   const handleSaveAccount = async (data: { adAccountId: string; accessToken: string; accountInfo: MetaAccountInfo }) => {
     const { accountInfo, accessToken } = data;
-    const clientId = `c_${accountInfo.id}`;
+    // Se estiver editando, mantém o ID original, caso contrário cria um novo ID baseado no adAccountId
+    const clientId = clientToEdit ? clientToEdit.id : `c_${accountInfo.id}`;
     
     const newClient: Client = {
       id: clientId,
       name: accountInfo.name,
-      industry: 'Geral',
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(accountInfo.name)}&background=random`,
+      industry: clientToEdit?.industry || 'Geral',
+      avatar: clientToEdit?.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(accountInfo.name)}&background=random`,
       adAccountId: accountInfo.id,
       accessToken: accessToken,
       lastSync: 'Conectado agora',
-      campaigns: []
+      campaigns: clientToEdit?.campaigns || [],
+      // Mantém dados existentes se estiver editando
+      loginEmail: clientToEdit?.loginEmail,
+      loginPassword: clientToEdit?.loginPassword,
+      dailyStats: clientToEdit?.dailyStats
     };
 
     try {
@@ -259,6 +271,7 @@ function App() {
         await setDoc(doc(db, "clients", sanitized.id), sanitized, { merge: true });
         setSelectedClientId(clientId);
         setIsSettingsOpen(false);
+        setClientToEdit(null); // Limpa o estado de edição
         setTimeout(() => handleSyncData(clientId, datePreset, customRange), 500);
       }
     } catch (e: any) {
@@ -304,9 +317,13 @@ function App() {
         clients={clients} 
         selectedClientId={selectedClientId} 
         onSelectClient={setSelectedClientId} 
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={() => {
+          setClientToEdit(null); // Garante que é modo de criação
+          setIsSettingsOpen(true);
+        }}
         onOpenAccessManagement={() => setIsAccessModalOpen(true)}
         onDeleteClient={handleDeleteClient}
+        onEditClient={handleEditClient}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
         onLogout={handleLogout}
@@ -320,6 +337,14 @@ function App() {
           <div className="bg-rose-50 border-b border-rose-200 px-8 py-3 flex items-center gap-3 text-rose-700 text-xs font-bold animate-fade-in">
             <AlertCircle className="w-4 h-4" />
             {syncError}
+            {(syncError.includes('session has been invalidated') || syncError.includes('validating access token')) && selectedClient && (
+              <button 
+                onClick={() => handleEditClient(selectedClient)}
+                className="ml-4 bg-rose-100 hover:bg-rose-200 text-rose-800 px-3 py-1 rounded-lg transition-colors"
+              >
+                Reconectar Conta
+              </button>
+            )}
             <button onClick={() => setSyncError(null)} className="ml-auto text-rose-400 hover:text-rose-600 font-black">X</button>
           </div>
         )}
@@ -562,9 +587,12 @@ function App() {
       {session.role === 'admin' && (
         <>
           <SettingsModal
-            initialClient={null}
+            initialClient={clientToEdit}
             isOpen={isSettingsOpen}
-            onClose={() => setIsSettingsOpen(false)}
+            onClose={() => {
+              setIsSettingsOpen(false);
+              setClientToEdit(null);
+            }}
             onSave={handleSaveAccount}
           />
           <AccessManagementModal
