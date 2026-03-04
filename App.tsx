@@ -8,18 +8,22 @@ import { SettingsModal } from './components/SettingsModal.tsx';
 import { AccessManagementModal } from './components/AccessManagementModal.tsx';
 import { DateRangePicker, DatePreset } from './components/DateRangePicker.tsx';
 import { Login } from './components/Login.tsx';
-import { Client, Campaign } from './types.ts';
-import { Menu, Search, BarChart2, DollarSign, MousePointer, ShoppingBag, RefreshCw, TrendingUp, Loader2, PlusCircle, Database, AlertCircle, WifiOff, Clock, Target, Users, HelpCircle } from 'lucide-react';
+import { ReportsPage } from './components/ReportsPage.tsx';
+import { Client, Campaign, Report } from './types.ts';
+import { Menu, Search, BarChart2, DollarSign, MousePointer, ShoppingBag, RefreshCw, TrendingUp, Loader2, PlusCircle, Database, AlertCircle, WifiOff, Clock, Target, Users, HelpCircle, FileText, Sparkles } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { syncMetaAdsData, MetaAccountInfo } from './services/metaService.ts';
+import { generateConsolidatedReport } from './services/geminiService.ts';
 import { db } from './firebase.ts';
-import { collection, onSnapshot, setDoc, doc, deleteDoc, query } from 'firebase/firestore';
+import { collection, onSnapshot, setDoc, doc, deleteDoc, query, addDoc } from 'firebase/firestore';
 
 interface UserSession {
   email: string;
   role: 'admin' | 'client';
   clientId?: string;
 }
+
+type ViewMode = 'dashboard' | 'reports';
 
 const sanitizeData = (obj: any): any => {
   if (Array.isArray(obj)) {
@@ -37,6 +41,7 @@ const sanitizeData = (obj: any): any => {
 function App() {
   const [session, setSession] = useState<UserSession | null>(null);
   const [isAuthChecking, setIsAuthChecking] = useState(true);
+  const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
 
   const [clients, setClients] = useState<Client[]>([]);
   const clientsRef = useRef<Client[]>([]);
@@ -52,6 +57,7 @@ function App() {
   const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isGeneratingReport, setIsGeneratingReport] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   
   const initialLoadDone = useRef(false);
@@ -128,6 +134,44 @@ function App() {
       setIsSyncing(false);
     }
   }, [session, isSyncing, isFirebaseAvailable]);
+
+  const handleGenerateReport = async () => {
+    const client = clients.find(c => c.id === selectedClientId);
+    if (!client || isGeneratingReport) return;
+
+    setIsGeneratingReport(true);
+    try {
+      const summary = await generateConsolidatedReport(client);
+      const metrics = client.campaigns.reduce((acc, curr) => {
+        acc.spend += curr.metrics.spend || 0;
+        acc.conversions += curr.metrics.conversions || 0;
+        acc.revenue += curr.metrics.conversionValue || 0;
+        return acc;
+      }, { spend: 0, conversions: 0, revenue: 0 });
+
+      const newReport: Omit<Report, 'id'> = {
+        clientId: client.id,
+        timestamp: new Date().toISOString(),
+        month: new Date().getMonth() + 1,
+        year: new Date().getFullYear(),
+        summary,
+        metricsSnapshot: {
+          totalSpend: metrics.spend,
+          totalRevenue: metrics.revenue,
+          totalConversions: metrics.conversions,
+          avgRoas: metrics.revenue / (metrics.spend || 1)
+        }
+      };
+
+      await addDoc(collection(db, "reports"), newReport);
+      alert("Relatório gerado e arquivado com sucesso!");
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao gerar relatório.");
+    } finally {
+      setIsGeneratingReport(false);
+    }
+  };
 
   useEffect(() => {
     if (session && selectedClientId) {
@@ -234,7 +278,7 @@ function App() {
 
   const handleOpenDetails = (campaign: Campaign) => {
     setSelectedCampaign(campaign);
-    setPreviewCampaign(null); // Fecha o preview ao abrir detalhes
+    setPreviewCampaign(null);
   };
 
   const getObjectiveLabel = (objective: string) => {
@@ -267,6 +311,8 @@ function App() {
         onClose={() => setIsSidebarOpen(false)}
         onLogout={handleLogout}
         isAdmin={session.role === 'admin'}
+        viewMode={viewMode}
+        onViewChange={setViewMode}
       />
 
       <main className="flex-1 w-full lg:ml-64 transition-all duration-300 overflow-x-hidden relative">
@@ -296,186 +342,206 @@ function App() {
         )}
 
         {selectedClient && (
-          <div className="p-4 md:p-8 space-y-8 animate-fade-in pb-20">
-            <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-              <div className="flex items-center gap-4 w-full md:w-auto">
-                <button 
-                  onClick={() => setIsSidebarOpen(true)}
-                  className="lg:hidden p-2 bg-white border border-slate-200 rounded-xl text-slate-600"
-                >
-                  <Menu className="w-6 h-6" />
-                </button>
-                <div>
-                  <div className="flex items-center gap-3">
-                     <h1 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">{selectedClient.name}</h1>
-                     <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100 uppercase flex items-center gap-1">
-                       <Database className="w-3 h-3" /> Online
-                     </span>
-                  </div>
-                  <p className="text-xs md:text-sm text-slate-500 font-medium mt-1">
-                    ID: <span className="text-slate-900 font-bold">{selectedClient.adAccountId}</span> • Sync: <span className="text-indigo-600 font-bold">{selectedClient.lastSync}</span>
-                  </p>
-                </div>
-              </div>
-              
-              <div className="flex flex-wrap gap-3 w-full md:w-auto">
-                <button 
-                  onClick={() => handleSyncData(selectedClientId, datePreset, customRange)}
-                  disabled={isSyncing}
-                  className={`flex-1 md:flex-none flex items-center justify-center gap-3 px-6 py-3 rounded-xl text-xs font-black uppercase transition-all shadow-lg active:scale-95 ${
-                    isSyncing 
-                      ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-                      : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
-                  }`}
-                >
-                  <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                  {isSyncing ? 'Sincronizando...' : 'Sincronizar Agora'}
-                </button>
-                <DateRangePicker 
-                  selected={datePreset} 
-                  onSelect={handleDateSelect} 
-                  initialCustomRange={customRange}
-                />
-              </div>
-            </header>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
-              <StatCard 
-                label="Total Gasto" 
-                value={`R$ ${clientMetrics.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} 
-                trend={12} 
-                icon={<DollarSign />} 
-                description="Valor total investido no período selecionado."
-              />
-              <StatCard 
-                label="ROAS Global" 
-                value={`${roas}x`} 
-                trend={8} 
-                icon={<BarChart2 />} 
-                description="Retorno sobre investimento. Calculado como: Valor de Conversão / Valor Gasto. Se estiver zerado, verifique se o Pixel está enviando o 'Valor da Conversão'."
-              />
-              <StatCard 
-                label="Resultados Totais" 
-                value={clientMetrics.conversions.toString()} 
-                trend={15} 
-                icon={<ShoppingBag />} 
-                description="Soma de conversões de todas as campanhas. Identificamos automaticamente se o resultado é Compra, Lead ou Mensagem baseado no objetivo de cada uma."
-              />
-              <StatCard 
-                label="Cliques Únicos" 
-                value={clientMetrics.clicks.toLocaleString('pt-BR')} 
-                icon={<MousePointer />} 
-                description="Quantidade de pessoas únicas que clicaram no seu anúncio."
-              />
-            </div>
-
-            <div className="bg-white p-6 md:p-8 rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
-              <h3 className="font-black text-slate-900 uppercase tracking-widest text-[10px] mb-8 flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-indigo-600" /> Histórico de Performance
-              </h3>
-              <div className="h-[300px] w-full min-w-0 relative">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
-                  <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="colorSpend" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.15}/>
-                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
-                      </linearGradient>
-                      <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
-                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 700}} />
-                    <YAxis hide />
-                    <Tooltip contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}} />
-                    <Area type="monotone" dataKey="spend" stroke="#4f46e5" fill="url(#colorSpend)" strokeWidth={4} name="Gasto" />
-                    <Area type="monotone" dataKey="revenue" stroke="#10b981" fill="url(#colorRevenue)" strokeWidth={4} name="Retorno" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div className="space-y-6">
-              <div className="flex items-end justify-between">
-                <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase text-[12px] tracking-widest">Campanhas Ativas</h2>
-                <div className="relative">
-                   <input type="text" placeholder="Filtrar..." className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm min-w-[200px]" />
-                   <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                </div>
-              </div>
-
-              {selectedClient.campaigns.length === 0 ? (
-                <div className="bg-white rounded-[32px] p-16 text-center border-2 border-slate-100 border-dashed">
-                  <Database className="w-12 h-12 text-slate-200 mx-auto mb-4" />
-                  <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">Aguardando dados da Meta Ads...</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                  {selectedClient.campaigns.map((campaign) => (
-                    <div 
-                      key={campaign.id} 
-                      onClick={() => setPreviewCampaign(campaign)}
-                      className="bg-white rounded-[32px] border border-slate-200 shadow-sm hover:shadow-xl hover:border-indigo-300 transition-all cursor-pointer group flex flex-col md:flex-row overflow-hidden"
+          <>
+            {viewMode === 'dashboard' ? (
+              <div className="p-4 md:p-8 space-y-8 animate-fade-in pb-20">
+                <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div className="flex items-center gap-4 w-full md:w-auto">
+                    <button 
+                      onClick={() => setIsSidebarOpen(true)}
+                      className="lg:hidden p-2 bg-white border border-slate-200 rounded-xl text-slate-600"
                     >
-                      <div className="w-full md:w-52 h-52 md:h-auto bg-slate-100 flex-shrink-0 relative overflow-hidden">
-                        <img 
-                          src={campaign.creative.url || 'https://via.placeholder.com/400'} 
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
-                          alt={campaign.name} 
-                        />
-                        <div className="absolute top-4 left-4 bg-slate-900/90 text-white text-[8px] font-black uppercase px-2 py-1 rounded-lg tracking-widest">
-                          {campaign.platform}
-                        </div>
+                      <Menu className="w-6 h-6" />
+                    </button>
+                    <div>
+                      <div className="flex items-center gap-3">
+                         <h1 className="text-xl md:text-2xl font-black text-slate-900 tracking-tight">{selectedClient.name}</h1>
+                         <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded border border-emerald-100 uppercase flex items-center gap-1">
+                           <Database className="w-3 h-3" /> Online
+                         </span>
                       </div>
-
-                      <div className="p-6 flex-1 flex flex-col">
-                        <div className="flex-1">
-                          <h3 className="font-black text-slate-900 text-sm group-hover:text-indigo-600 transition-colors line-clamp-1 leading-tight mb-2">
-                            {campaign.name}
-                          </h3>
-                          
-                          <div className="flex flex-wrap gap-2 mb-4">
-                            <div className="flex items-center gap-1 bg-indigo-50 text-indigo-600 px-2 py-1 rounded-md text-[9px] font-black uppercase border border-indigo-100/50">
-                              <Target className="w-3 h-3" />
-                              {campaign.objective}
-                            </div>
-                            <div className="flex items-center gap-1 bg-slate-100 text-slate-500 px-2 py-1 rounded-md text-[9px] font-black uppercase border border-slate-200/50">
-                              <Users className="w-3 h-3" />
-                              Público
-                            </div>
-                          </div>
-
-                          <p className="text-[10px] text-slate-500 font-medium line-clamp-2 mb-4 italic">
-                            "{campaign.audience || 'Segmentação automática'}"
-                          </p>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
-                          <div>
-                            <p className="text-[8px] text-slate-400 uppercase font-black mb-1">Gasto</p>
-                            <p className="font-black text-slate-900 text-xs truncate">R$ {campaign.metrics.spend.toLocaleString('pt-BR')}</p>
-                          </div>
-                          <div>
-                            <p className="text-[8px] text-slate-400 uppercase font-black mb-1 flex items-center gap-1">
-                              {getObjectiveLabel(campaign.objective)}
-                              <HelpCircle className="w-2.5 h-2.5" />
-                            </p>
-                            <p className="font-black text-indigo-600 text-xs">{campaign.metrics.conversions || 0}</p>
-                          </div>
-                          <div>
-                            <p className="text-[8px] text-slate-400 uppercase font-black mb-1">ROAS</p>
-                            <p className="font-black text-slate-900 text-xs truncate">{(campaign.metrics.conversionValue / (campaign.metrics.spend || 1)).toFixed(2)}x</p>
-                          </div>
-                        </div>
-                      </div>
+                      <p className="text-xs md:text-sm text-slate-500 font-medium mt-1">
+                        ID: <span className="text-slate-900 font-bold">{selectedClient.adAccountId}</span> • Sync: <span className="text-indigo-600 font-bold">{selectedClient.lastSync}</span>
+                      </p>
                     </div>
-                  ))}
+                  </div>
+                  
+                  <div className="flex flex-wrap gap-3 w-full md:w-auto">
+                    {session.role === 'admin' && (
+                      <button 
+                        onClick={handleGenerateReport}
+                        disabled={isGeneratingReport || isSyncing}
+                        className={`flex-1 md:flex-none flex items-center justify-center gap-3 px-6 py-3 rounded-xl text-xs font-black uppercase transition-all shadow-lg active:scale-95 ${
+                          isGeneratingReport 
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                            : 'bg-slate-900 text-white hover:bg-black shadow-slate-200'
+                        }`}
+                      >
+                        {isGeneratingReport ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-indigo-400" />}
+                        {isGeneratingReport ? 'Gerando...' : 'Gerar Relatório IA'}
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => handleSyncData(selectedClientId, datePreset, customRange)}
+                      disabled={isSyncing}
+                      className={`flex-1 md:flex-none flex items-center justify-center gap-3 px-6 py-3 rounded-xl text-xs font-black uppercase transition-all shadow-lg active:scale-95 ${
+                        isSyncing 
+                          ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                          : 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-indigo-200'
+                      }`}
+                    >
+                      <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                      {isSyncing ? 'Sincronizando...' : 'Sincronizar Agora'}
+                    </button>
+                    <DateRangePicker 
+                      selected={datePreset} 
+                      onSelect={handleDateSelect} 
+                      initialCustomRange={customRange}
+                    />
+                  </div>
+                </header>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
+                  <StatCard 
+                    label="Total Gasto" 
+                    value={`R$ ${clientMetrics.spend.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`} 
+                    trend={12} 
+                    icon={<DollarSign />} 
+                    description="Valor total investido no período selecionado."
+                  />
+                  <StatCard 
+                    label="ROAS Global" 
+                    value={`${roas}x`} 
+                    trend={8} 
+                    icon={<BarChart2 />} 
+                    description="Retorno sobre investimento. Calculado como: Valor de Conversão / Valor Gasto. Se estiver zerado, verifique se o Pixel está enviando o 'Valor da Conversão'."
+                  />
+                  <StatCard 
+                    label="Resultados Totais" 
+                    value={clientMetrics.conversions.toString()} 
+                    trend={15} 
+                    icon={<ShoppingBag />} 
+                    description="Soma de conversões de todas as campanhas. Identificamos automaticamente se o resultado é Compra, Lead ou Mensagem baseado no objetivo de cada uma."
+                  />
+                  <StatCard 
+                    label="Cliques Únicos" 
+                    value={clientMetrics.clicks.toLocaleString('pt-BR')} 
+                    icon={<MousePointer />} 
+                    description="Quantidade de pessoas únicas que clicaram no seu anúncio."
+                  />
                 </div>
-              )}
-            </div>
-          </div>
+
+                <div className="bg-white p-6 md:p-8 rounded-[40px] border border-slate-200 shadow-sm overflow-hidden">
+                  <h3 className="font-black text-slate-900 uppercase tracking-widest text-[10px] mb-8 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4 text-indigo-600" /> Histórico de Performance
+                  </h3>
+                  <div className="h-[300px] w-full min-w-0 relative">
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
+                      <AreaChart data={chartData}>
+                        <defs>
+                          <linearGradient id="colorSpend" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.15}/>
+                            <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                          </linearGradient>
+                          <linearGradient id="colorRevenue" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.15}/>
+                            <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid vertical={false} stroke="#f1f5f9" strokeDasharray="3 3" />
+                        <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 700}} />
+                        <YAxis hide />
+                        <Tooltip contentStyle={{borderRadius: '24px', border: 'none', boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1)'}} />
+                        <Area type="monotone" dataKey="spend" stroke="#4f46e5" fill="url(#colorSpend)" strokeWidth={4} name="Gasto" />
+                        <Area type="monotone" dataKey="revenue" stroke="#10b981" fill="url(#colorRevenue)" strokeWidth={4} name="Retorno" />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+
+                <div className="space-y-6">
+                  <div className="flex items-end justify-between">
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight uppercase text-[12px] tracking-widest">Campanhas Ativas</h2>
+                    <div className="relative">
+                       <input type="text" placeholder="Filtrar..." className="pl-10 pr-4 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm min-w-[200px]" />
+                       <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    </div>
+                  </div>
+
+                  {selectedClient.campaigns.length === 0 ? (
+                    <div className="bg-white rounded-[32px] p-16 text-center border-2 border-slate-100 border-dashed">
+                      <Database className="w-12 h-12 text-slate-200 mx-auto mb-4" />
+                      <p className="text-slate-400 font-black uppercase text-[10px] tracking-widest">Aguardando dados da Meta Ads...</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+                      {selectedClient.campaigns.map((campaign) => (
+                        <div 
+                          key={campaign.id} 
+                          onClick={() => setPreviewCampaign(campaign)}
+                          className="bg-white rounded-[32px] border border-slate-200 shadow-sm hover:shadow-xl hover:border-indigo-300 transition-all cursor-pointer group flex flex-col md:flex-row overflow-hidden"
+                        >
+                          <div className="w-full md:w-52 h-52 md:h-auto bg-slate-100 flex-shrink-0 relative overflow-hidden">
+                            <img 
+                              src={campaign.creative.url || 'https://via.placeholder.com/400'} 
+                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" 
+                              alt={campaign.name} 
+                            />
+                            <div className="absolute top-4 left-4 bg-slate-900/90 text-white text-[8px] font-black uppercase px-2 py-1 rounded-lg tracking-widest">
+                              {campaign.platform}
+                            </div>
+                          </div>
+
+                          <div className="p-6 flex-1 flex flex-col">
+                            <div className="flex-1">
+                              <h3 className="font-black text-slate-900 text-sm group-hover:text-indigo-600 transition-colors line-clamp-1 leading-tight mb-2">
+                                {campaign.name}
+                              </h3>
+                              
+                              <div className="flex flex-wrap gap-2 mb-4">
+                                <div className="flex items-center gap-1 bg-indigo-50 text-indigo-600 px-2 py-1 rounded-md text-[9px] font-black uppercase border border-indigo-100/50">
+                                  <Target className="w-3 h-3" />
+                                  {campaign.objective}
+                                </div>
+                                <div className="flex items-center gap-1 bg-slate-100 text-slate-500 px-2 py-1 rounded-md text-[9px] font-black uppercase border border-slate-200/50">
+                                  <Users className="w-3 h-3" />
+                                  Público
+                                </div>
+                              </div>
+
+                              <p className="text-[10px] text-slate-500 font-medium line-clamp-2 mb-4 italic">
+                                "{campaign.audience || 'Segmentação automática'}"
+                              </p>
+                            </div>
+
+                            <div className="grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
+                              <div>
+                                <p className="text-[8px] text-slate-400 uppercase font-black mb-1">Gasto</p>
+                                <p className="font-black text-slate-900 text-xs truncate">R$ {campaign.metrics.spend.toLocaleString('pt-BR')}</p>
+                              </div>
+                              <div>
+                                <p className="text-[8px] text-slate-400 uppercase font-black mb-1 flex items-center gap-1">
+                                  {getObjectiveLabel(campaign.objective)}
+                                  <HelpCircle className="w-2.5 h-2.5" />
+                                </p>
+                                <p className="font-black text-indigo-600 text-xs">{campaign.metrics.conversions || 0}</p>
+                              </div>
+                              <div>
+                                <p className="text-[8px] text-slate-400 uppercase font-black mb-1">ROAS</p>
+                                <p className="font-black text-slate-900 text-xs truncate">{(campaign.metrics.conversionValue / (campaign.metrics.spend || 1)).toFixed(2)}x</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <ReportsPage client={selectedClient} />
+            )}
+          </>
         )}
       </main>
 

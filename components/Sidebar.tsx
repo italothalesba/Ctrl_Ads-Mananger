@@ -1,7 +1,7 @@
 
 import React from 'react';
 import { Client } from '../types';
-import { LayoutDashboard, Users, CreditCard, PlusCircle, PieChart, Trash2, X, LogOut, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Users, CreditCard, PlusCircle, PieChart, Trash2, X, LogOut, ShieldCheck, FileText } from 'lucide-react';
 
 interface SidebarProps {
   clients: Client[];
@@ -14,6 +14,8 @@ interface SidebarProps {
   onClose: () => void;
   onLogout?: () => void;
   isAdmin: boolean;
+  viewMode: 'dashboard' | 'reports';
+  onViewChange: (view: 'dashboard' | 'reports') => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ 
@@ -26,7 +28,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
   isOpen,
   onClose,
   onLogout,
-  isAdmin
+  isAdmin,
+  viewMode,
+  onViewChange
 }) => {
   return (
     <>
@@ -51,18 +55,37 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        <div className="px-4 py-6 flex-1 overflow-y-auto">
+        <div className="px-4 py-6 flex-1 overflow-y-auto space-y-8">
+          {/* Navegação de Seção */}
+          <div className="space-y-1">
+            <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-4 px-2">Menu Principal</h3>
+            <button 
+              onClick={() => onViewChange('dashboard')}
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all ${viewMode === 'dashboard' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+            >
+              <LayoutDashboard className="w-5 h-5" />
+              <span>Dashboard</span>
+            </button>
+            <button 
+              onClick={() => onViewChange('reports')}
+              className={`w-full flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-bold transition-all ${viewMode === 'reports' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+            >
+              <FileText className="w-5 h-5" />
+              <span>Relatórios</span>
+            </button>
+          </div>
+
           {isAdmin && (
-            <>
-              <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-4 px-2">Clientes</h3>
+            <div>
+              <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-4 px-2">Clientes</h3>
               <div className="space-y-1">
                 {clients.map((client) => (
                   <div
                     key={client.id}
                     className={`group w-full flex items-center justify-between px-3 py-3 rounded-lg text-sm transition-all cursor-pointer ${
-                      selectedClientId === client.id
-                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-900/50'
-                        : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+                      selectedClientId === client.id && viewMode === 'dashboard'
+                        ? 'bg-slate-800 text-white'
+                        : 'text-slate-400 hover:bg-white/5 hover:text-white'
                     }`}
                     onClick={() => {
                       onSelectClient(client.id);
@@ -73,11 +96,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       <img 
                         src={client.avatar} 
                         alt={client.name} 
-                        className="w-8 h-8 rounded-full border border-slate-600 object-cover flex-shrink-0"
+                        className="w-7 h-7 rounded-full border border-slate-700 object-cover flex-shrink-0"
                       />
                       <div className="text-left overflow-hidden">
-                        <p className="font-medium truncate w-24">{client.name}</p>
-                        <p className="text-xs text-slate-500 truncate w-24">{client.industry}</p>
+                        <p className="font-medium truncate w-24 text-xs">{client.name}</p>
                       </div>
                     </div>
 
@@ -95,18 +117,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </div>
                 ))}
               </div>
-            </>
+            </div>
           )}
           
           {!isAdmin && (
-             <div className="px-2 py-4">
+             <div className="px-2">
                 <div className="bg-white/5 border border-white/10 p-4 rounded-2xl">
                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Sua Conta</p>
                    <div className="flex items-center gap-3">
                       <img src={clients.find(c => c.id === selectedClientId)?.avatar} className="w-10 h-10 rounded-full border border-white/20" />
                       <div>
-                        <p className="font-bold text-white text-sm">{clients.find(c => c.id === selectedClientId)?.name}</p>
-                        <p className="text-[10px] text-slate-500 font-bold uppercase">{clients.find(c => c.id === selectedClientId)?.industry}</p>
+                        <p className="font-bold text-white text-sm truncate w-28">{clients.find(c => c.id === selectedClientId)?.name}</p>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase truncate w-28">{clients.find(c => c.id === selectedClientId)?.industry}</p>
                       </div>
                    </div>
                 </div>

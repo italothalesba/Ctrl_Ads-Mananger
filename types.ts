@@ -30,10 +30,8 @@ export interface Metrics {
   reach?: number;
   frequency?: number;
   cpm?: number;
-  // Messaging metrics
   messages?: number;
   costPerMessage?: number;
-  // Breakdown & Video
   demographics?: DemographicData[];
   video?: VideoMetrics;
 }
@@ -80,6 +78,21 @@ export interface Campaign {
   audience: string;
 }
 
+export interface Report {
+  id: string;
+  clientId: string;
+  timestamp: string;
+  month: number;
+  year: number;
+  summary: string;
+  metricsSnapshot: {
+    totalSpend: number;
+    totalRevenue: number;
+    totalConversions: number;
+    avgRoas: number;
+  };
+}
+
 export interface Client {
   id: string;
   name: string;
@@ -90,7 +103,6 @@ export interface Client {
   lastSync?: string;
   campaigns: Campaign[];
   dailyStats?: DailyStat[];
-  // Novos campos para acesso individual
   loginEmail?: string;
   loginPassword?: string;
 }
